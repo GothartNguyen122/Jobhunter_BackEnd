@@ -202,15 +202,17 @@ public class JobService {
 
     public ResultPaginationDTO userSearchAndFilter(
             String keyword, String location, String skills,
-            Double minSalary, Double maxSalary, String level, Pageable pageable) {
+            Double minSalary, Double maxSalary, String level, String companyName, Pageable pageable) {
 
         try {
             System.out.println("Search parameters - keyword: " + keyword +
                     ", location: " + location + ", skills: " + skills +
-                    ", minSalary: " + minSalary + ", maxSalary: " + maxSalary + ", level: " + level);
+                    ", minSalary: " + minSalary + ", maxSalary: " + maxSalary + ", level: " + level +
+                    ", companyName: " + companyName);
 
             // Xây dựng specification cho search và filter
             Specification<Job> spec = (root, query, criteriaBuilder) -> {
+                query.distinct(true);
                 List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
 
                 // Search logic - tìm kiếm theo tên job
@@ -251,6 +253,14 @@ public class JobService {
                     predicates.add(root.get("level").in(levelEnums));
                 }
 
+                // Search by company name
+                if (companyName != null && !companyName.trim().isEmpty()) {
+                    predicates.add(criteriaBuilder.like(
+                        criteriaBuilder.lower(root.join("company").get("name")),
+                        "%" + companyName.toLowerCase() + "%"
+                    ));
+                }
+
                 // Debug: In ra tất cả predicates
                 System.out.println("Total predicates: " + predicates.size());
                 for (int i = 0; i < predicates.size(); i++) {
@@ -267,5 +277,12 @@ public class JobService {
             e.printStackTrace();
             throw e;
         }
+    }
+
+    // Backward-compatible overload (keeps existing callers working)
+    public ResultPaginationDTO userSearchAndFilter(
+            String keyword, String location, String skills,
+            Double minSalary, Double maxSalary, String level, Pageable pageable) {
+        return userSearchAndFilter(keyword, location, skills, minSalary, maxSalary, level, null, pageable);
     }
 }

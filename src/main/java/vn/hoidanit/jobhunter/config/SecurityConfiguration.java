@@ -100,6 +100,10 @@ public class SecurityConfiguration {
                 return jwtDecoder.decode(token);
             } catch (Exception e) {
                 System.out.println(">>> JWT error: " + e.getMessage());
+                // Log thêm thông tin để debug
+                if (e.getMessage().contains("expired")) {
+                    System.out.println(">>> Token đã hết hạn. Vui lòng sử dụng refresh token để lấy token mới.");
+                }
                 throw e;
             }
         };

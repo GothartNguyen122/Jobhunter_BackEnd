@@ -186,4 +186,9 @@ public class ResumeService {
 
         return this.resumeRepository.existsByUserAndJobId(user, jobId);
     }
+
+    public java.util.List<ResFetchResumeDTO> fetchResumesByJobId(long jobId) {
+        java.util.List<Resume> resumes = this.resumeRepository.findByJobId(jobId);
+        return resumes.stream().map(this::getResume).collect(Collectors.toList());
+    }
 }
