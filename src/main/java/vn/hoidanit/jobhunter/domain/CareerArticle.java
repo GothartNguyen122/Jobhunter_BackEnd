@@ -27,9 +27,6 @@ public class CareerArticle {
     private String categoryColor;
     private String image;
     private String link;
-    private String slug; // URL-friendly identifier
-    @jakarta.persistence.Column(columnDefinition = "TEXT")
-    private String content; // Full article content (HTML or Markdown)
     private boolean active = true;
 
     private Instant createdAt;

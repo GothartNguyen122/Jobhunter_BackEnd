@@ -29,10 +29,6 @@ public class CareerArticleService {
         rs.setResult(page.getContent());
         return rs;
     }
-
-    public java.util.Optional<CareerArticle> fetchBySlug(String slug) {
-        return this.careerArticleRepository.findBySlug(slug);
-    }
 }
 
 

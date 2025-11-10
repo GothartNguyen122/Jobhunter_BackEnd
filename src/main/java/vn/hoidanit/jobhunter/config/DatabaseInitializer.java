@@ -142,8 +142,6 @@ public class DatabaseInitializer implements CommandLineRunner {
                 a1.setCategoryColor("#f0f0f0");
                 a1.setImage("https://images.unsplash.com/photo-1573164713714-d95e436ab8d6?w=400");
                 a1.setLink("https://cafef.vn/");
-                a1.setSlug("menh-tho-hop-so-gi");
-                a1.setContent("<h2>Mệnh Thổ hợp số gì?</h2><p>Nội dung bài viết về mệnh Thổ và sim số may mắn...</p>");
                 a1.setActive(true);
                 articles.add(a1);
 
@@ -153,8 +151,6 @@ public class DatabaseInitializer implements CommandLineRunner {
                 a2.setCategoryColor("#e6f7ff");
                 a2.setImage("https://images.unsplash.com/photo-1497366216548-37526070297c?w=400");
                 a2.setLink("https://vnexpress.net/");
-                a2.setSlug("menh-tho-hop-cay-gi");
-                a2.setContent("<h2>Mệnh Thổ hợp cây gì?</h2><p>Nội dung bài viết về cây cảnh phong thủy cho người mệnh Thổ...</p>");
                 a2.setActive(true);
                 articles.add(a2);
 
@@ -164,8 +160,6 @@ public class DatabaseInitializer implements CommandLineRunner {
                 a3.setCategoryColor("#fff7e6");
                 a3.setImage("https://images.unsplash.com/photo-1511578314322-379afb476865?w=400");
                 a3.setLink("https://www.linkedin.com/");
-                a3.setSlug("jobhunter-dong-hanh-cung-cac-truong-dai-hoc");
-                a3.setContent("<h2>JobHunter đồng hành cùng các trường Đại học</h2><p>Nội dung về sự kiện tuyển dụng tại các trường đại học...</p>");
                 a3.setActive(true);
                 articles.add(a3);
 
@@ -175,8 +169,6 @@ public class DatabaseInitializer implements CommandLineRunner {
                 a4.setCategoryColor("#f6ffed");
                 a4.setImage("https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400");
                 a4.setLink("https://google.com/");
-                a4.setSlug("jobhunter-giai-ma-xu-huong-thi-truong-lao-dong");
-                a4.setContent("<h2>Xu hướng thị trường lao động</h2><p>Báo cáo về xu hướng thị trường lao động từ hơn 700 lãnh đạo doanh nghiệp...</p>");
                 a4.setActive(true);
                 articles.add(a4);
 

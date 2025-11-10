@@ -24,16 +24,6 @@ public class CareerArticleController {
     public ResponseEntity<ResultPaginationDTO> fetchAll(Pageable pageable) {
         return ResponseEntity.ok().body(this.careerArticleService.fetchAll(pageable));
     }
-
-    @GetMapping("/career-articles/{slug}")
-    @ApiMessage("Get career article by slug")
-    public ResponseEntity<vn.hoidanit.jobhunter.domain.CareerArticle> fetchBySlug(@PathVariable("slug") String slug) {
-        java.util.Optional<vn.hoidanit.jobhunter.domain.CareerArticle> article = this.careerArticleService.fetchBySlug(slug);
-        if (article.isPresent()) {
-            return ResponseEntity.ok().body(article.get());
-        }
-        return ResponseEntity.notFound().build();
-    }
 }
 
 

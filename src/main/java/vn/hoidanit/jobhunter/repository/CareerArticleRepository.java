@@ -7,7 +7,6 @@ import vn.hoidanit.jobhunter.domain.CareerArticle;
 
 @Repository
 public interface CareerArticleRepository extends JpaRepository<CareerArticle, Long> {
-    java.util.Optional<CareerArticle> findBySlug(String slug);
 }
 
 
