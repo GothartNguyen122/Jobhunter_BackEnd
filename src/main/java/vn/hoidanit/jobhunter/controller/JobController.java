@@ -136,4 +136,13 @@ public class JobController {
         body.put("resumes", resumes);
         return ResponseEntity.ok().body(body);
     }    
+
+    @GetMapping("/jobs/company/{companyId}")
+    @ApiMessage("Get jobs by company ID")
+    public ResponseEntity<ResultPaginationDTO> getJobsByCompany(
+            @PathVariable("companyId") long companyId,
+            Pageable pageable) {
+
+        return ResponseEntity.ok().body(this.jobService.fetchJobsByCompany(companyId, pageable));
+    }
 }

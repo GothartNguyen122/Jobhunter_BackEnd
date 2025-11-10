@@ -3,6 +3,7 @@ package vn.hoidanit.jobhunter.config;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.NonNull;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.HandlerMapping;
@@ -24,8 +25,8 @@ public class PermissionInterceptor implements HandlerInterceptor {
     @Override
     @Transactional
     public boolean preHandle(
-            HttpServletRequest request,
-            HttpServletResponse response, Object handler)
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response, @NonNull Object handler)
             throws Exception {
 
         String path = (String) request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
@@ -35,6 +36,11 @@ public class PermissionInterceptor implements HandlerInterceptor {
         System.out.println(">>> path= " + path);
         System.out.println(">>> httpMethod= " + httpMethod);
         System.out.println(">>> requestURI= " + requestURI);
+
+        // Skip permission check for public endpoints that should be accessible even when user is authenticated
+        if (isPublicEndpoint(path, httpMethod)) {
+            return true;
+        }
 
         // check permission
         String email = SecurityUtil.getCurrentUserLogin().isPresent() == true
@@ -59,5 +65,13 @@ public class PermissionInterceptor implements HandlerInterceptor {
         }
 
         return true;
+    }
+
+    private boolean isPublicEndpoint(String path, String method) {
+        if (path == null || method == null) {
+            return false;
+        }
+
+        return "/api/v1/career-articles".equals(path) && "GET".equalsIgnoreCase(method);
     }
 }

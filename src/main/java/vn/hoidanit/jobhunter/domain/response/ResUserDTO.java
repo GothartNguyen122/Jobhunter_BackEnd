@@ -3,6 +3,7 @@ package vn.hoidanit.jobhunter.domain.response;
 import java.time.Instant;
 import java.util.List;
 
+import vn.hoidanit.jobhunter.domain.Permission;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -49,5 +50,6 @@ public class ResUserDTO {
     public static class RoleUser {
         private long id;
         private String name;
+        private List<Permission> permissions;
     }
 }

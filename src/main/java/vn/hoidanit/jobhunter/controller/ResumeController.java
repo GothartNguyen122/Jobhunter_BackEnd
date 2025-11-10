@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -27,6 +28,7 @@ import vn.hoidanit.jobhunter.domain.response.resume.ResFetchResumeDTO;
 import vn.hoidanit.jobhunter.domain.response.resume.ResUpdateResumeDTO;
 import vn.hoidanit.jobhunter.service.ResumeService;
 import vn.hoidanit.jobhunter.service.UserService;
+import vn.hoidanit.jobhunter.service.JobService;
 import vn.hoidanit.jobhunter.util.SecurityUtil;
 import vn.hoidanit.jobhunter.util.annotation.ApiMessage;
 import vn.hoidanit.jobhunter.util.error.IdInvalidException;
@@ -40,6 +42,7 @@ public class ResumeController {
 
     private final ResumeService resumeService;
     private final UserService userService;
+    private final JobService jobService;
 
     private final FilterBuilder filterBuilder;
     private final FilterSpecificationConverter filterSpecificationConverter;
@@ -47,10 +50,12 @@ public class ResumeController {
     public ResumeController(
             ResumeService resumeService,
             UserService userService,
+            JobService jobService,
             FilterBuilder filterBuilder,
             FilterSpecificationConverter filterSpecificationConverter) {
         this.resumeService = resumeService;
         this.userService = userService;
+        this.jobService = jobService;
         this.filterBuilder = filterBuilder;
         this.filterSpecificationConverter = filterSpecificationConverter;
     }
@@ -70,6 +75,7 @@ public class ResumeController {
 
     @PutMapping("/resumes")
     @ApiMessage("Update a resume")
+    @Transactional
     public ResponseEntity<ResUpdateResumeDTO> update(@RequestBody Resume resume) throws IdInvalidException {
         // check id exist
         Optional<Resume> reqResumeOptional = this.resumeService.fetchById(resume.getId());
@@ -78,9 +84,72 @@ public class ResumeController {
         }
 
         Resume reqResume = reqResumeOptional.get();
-        reqResume.setStatus(resume.getStatus());
-
-        return ResponseEntity.ok().body(this.resumeService.update(reqResume));
+        ResumeStateEnum oldStatus = reqResume.getStatus();
+        ResumeStateEnum newStatus = resume.getStatus();
+        
+        // Validation: Kiểm tra nếu muốn approve nhưng job đã hết số lượng
+        if (oldStatus != ResumeStateEnum.APPROVED && newStatus == ResumeStateEnum.APPROVED) {
+            Job job = reqResume.getJob();
+            if (job != null) {
+                // Lấy job mới nhất từ database để đảm bảo quantity chính xác
+                Optional<Job> jobOptional = this.jobService.fetchJobById(job.getId());
+                if (jobOptional.isPresent()) {
+                    Job currentJob = jobOptional.get();
+                    if (currentJob.getQuantity() <= 0) {
+                        throw new IdInvalidException("Không thể phê duyệt ứng viên. Công việc đã hết số lượng tuyển dụng.");
+                    }
+                    if (!currentJob.isActive()) {
+                        throw new IdInvalidException("Không thể phê duyệt ứng viên. Công việc đã đóng tuyển dụng.");
+                    }
+                }
+            }
+        }
+        
+        reqResume.setStatus(newStatus);
+        ResUpdateResumeDTO result = this.resumeService.update(reqResume);
+        
+        // Xử lý thay đổi số lượng job dựa trên thay đổi trạng thái
+        Job job = reqResume.getJob();
+        if (job != null) {
+            // Lấy job mới nhất từ database để đảm bảo tính nhất quán
+            Optional<Job> jobOptional = this.jobService.fetchJobById(job.getId());
+            if (jobOptional.isPresent()) {
+                Job currentJob = jobOptional.get();
+                boolean jobUpdated = false;
+                
+                // Trường hợp 1: Chuyển từ khác sang APPROVED - giảm số lượng
+                if (oldStatus != ResumeStateEnum.APPROVED && newStatus == ResumeStateEnum.APPROVED) {
+                    if (currentJob.getQuantity() > 0) {
+                        currentJob.setQuantity(currentJob.getQuantity() - 1);
+                        jobUpdated = true;
+                        
+                        // Nếu số lượng về 0, tự động đóng tuyển
+                        if (currentJob.getQuantity() == 0) {
+                            currentJob.setActive(false);
+                        }
+                    }
+                }
+                // Trường hợp 2: Chuyển từ APPROVED sang REJECTED hoặc PENDING - tăng lại số lượng
+                else if (oldStatus == ResumeStateEnum.APPROVED && newStatus != ResumeStateEnum.APPROVED) {
+                    // Chỉ tăng lại nếu job đang đóng (quantity = 0) và active = false
+                    // Hoặc tăng lại bình thường nếu job vẫn còn active
+                    currentJob.setQuantity(currentJob.getQuantity() + 1);
+                    jobUpdated = true;
+                    
+                    // Nếu job đang đóng (quantity = 0, active = false) và giờ có quantity > 0, mở lại
+                    if (currentJob.getQuantity() > 0 && !currentJob.isActive()) {
+                        currentJob.setActive(true);
+                    }
+                }
+                
+                // Cập nhật job nếu có thay đổi
+                if (jobUpdated) {
+                    this.jobService.update(currentJob, currentJob);
+                }
+            }
+        }
+        
+        return ResponseEntity.ok().body(result);
     }
 
     @DeleteMapping("/resumes/{id}")
@@ -175,7 +244,7 @@ public class ResumeController {
         }
 
         Specification<Resume> jobInSpec = filterSpecificationConverter.convert(filterBuilder.field("job")
-                .in(filterBuilder.input(arrJobIds)).get());
+                .in(filterBuilder.input(arrJobIds != null ? arrJobIds : List.of())).get());
 
         Specification<Resume> finalSpec = jobInSpec.and(spec);
 

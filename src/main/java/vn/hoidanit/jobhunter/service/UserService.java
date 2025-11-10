@@ -199,6 +199,7 @@ public class UserService {
         if (user.getRole() != null) {
             roleUser.setId(user.getRole().getId());
             roleUser.setName(user.getRole().getName());
+            roleUser.setPermissions(user.getRole().getPermissions());
             res.setRole(roleUser);
         }
         res.setSkills(user.getSkills());

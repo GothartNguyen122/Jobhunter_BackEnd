@@ -48,6 +48,10 @@ public class SecurityConfiguration {
         String[] whiteList = {
                 "/",
                 "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/register",
+                "/api/v1/auth/google/login", "/api/v1/auth/google/register",
+                "/api/v1/auth/facebook/login", "/api/v1/auth/facebook/register",
+                "/api/v1/career-articles",
+                "/api/v1/feedback",
                 "/storage/**",
                 "/api/v1/email/**",
                 "/v3/api-docs/**",

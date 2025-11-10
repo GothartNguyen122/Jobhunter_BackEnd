@@ -11,11 +11,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
-import jakarta.persistence.criteria.Root;
-import jakarta.persistence.criteria.Subquery;
 import vn.hoidanit.jobhunter.domain.Company;
 import vn.hoidanit.jobhunter.domain.Job;
-import vn.hoidanit.jobhunter.domain.Resume;
 import vn.hoidanit.jobhunter.domain.Skill;
 import vn.hoidanit.jobhunter.domain.response.ResultPaginationDTO;
 import vn.hoidanit.jobhunter.domain.response.job.ResCreateJobDTO;
@@ -284,5 +281,29 @@ public class JobService {
             String keyword, String location, String skills,
             Double minSalary, Double maxSalary, String level, Pageable pageable) {
         return userSearchAndFilter(keyword, location, skills, minSalary, maxSalary, level, null, pageable);
+    }
+    public ResultPaginationDTO fetchJobsByCompany(long companyId, Pageable pageable) {
+        // Tạo specification để filter theo company ID
+        Specification<Job> spec = (root, query, criteriaBuilder) -> {
+            return criteriaBuilder.equal(root.get("company").get("id"), companyId);
+        };
+
+        Page<Job> pageJobs = this.jobRepository.findAll(spec, pageable);
+
+        // Tự động cập nhật trạng thái active cho tất cả job trong kết quả
+        pageJobs.getContent().forEach(this::updateJobActiveStatus);
+
+        ResultPaginationDTO rs = new ResultPaginationDTO();
+        ResultPaginationDTO.Meta mt = new ResultPaginationDTO.Meta();
+
+        mt.setPage(pageable.getPageNumber() + 1);
+        mt.setPageSize(pageable.getPageSize());
+        mt.setPages(pageJobs.getTotalPages());
+        mt.setTotal(pageJobs.getTotalElements());
+
+        rs.setMeta(mt);
+        rs.setResult(pageJobs.getContent());
+
+        return rs;
     }
 }
