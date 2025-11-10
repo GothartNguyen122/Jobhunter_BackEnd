@@ -1,8 +1,14 @@
 package vn.hoidanit.jobhunter.controller;
 
+import java.util.Map;
+import java.util.Optional;
+
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -11,12 +17,17 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestTemplate;
 
 import jakarta.validation.Valid;
 import vn.hoidanit.jobhunter.domain.User;
@@ -38,6 +49,7 @@ public class AuthController {
     private final SecurityUtil securityUtil;
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
+    private final RestTemplate restTemplate;
 
     @Value("${hoidanit.jwt.refresh-token-validity-in-seconds}")
     private long refreshTokenExpiration;
@@ -46,11 +58,13 @@ public class AuthController {
             AuthenticationManagerBuilder authenticationManagerBuilder,
             SecurityUtil securityUtil,
             UserService userService,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            RestTemplate restTemplate) {
         this.authenticationManagerBuilder = authenticationManagerBuilder;
         this.securityUtil = securityUtil;
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
+        this.restTemplate = restTemplate;
     }
 
     @PostMapping("/auth/login")
@@ -179,11 +193,11 @@ public class AuthController {
         }
 
         // update refresh token = null
-        this.userService.updateUserToken(null, email);
+        this.userService.updateUserToken("", email);
 
         // remove refresh token cookie
         ResponseCookie deleteSpringCookie = ResponseCookie
-                .from("refresh_token", null)
+                .from("refresh_token", "")
                 .httpOnly(true)
                 .secure(true)
                 .path("/")
@@ -215,5 +229,260 @@ public class AuthController {
 
         User createdUser = this.userService.handleCreateUser(newUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(this.userService.convertToResCreateUserDTO(createdUser));
+    }
+
+    @PostMapping("/auth/google/login")
+    @ApiMessage("Login with Google Authorization Code")
+    public ResponseEntity<ResLoginDTO> googleLogin(@RequestParam("code") String code,
+            @RequestParam("redirectUri") String redirectUri,
+            @Value("${spring.security.oauth2.client.registration.google.client-id}") String clientId,
+            @Value("${spring.security.oauth2.client.registration.google.client-secret}") String clientSecret) {
+        try {
+            // 1) Exchange code for tokens (x-www-form-urlencoded)
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("code", code);
+            form.add("client_id", clientId);
+            form.add("client_secret", clientSecret);
+            form.add("redirect_uri", redirectUri);
+            form.add("grant_type", "authorization_code");
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            HttpEntity<MultiValueMap<String, String>> httpEntity = new HttpEntity<>(form, headers);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> tokenResponse = restTemplate.postForObject(
+                    "https://oauth2.googleapis.com/token", httpEntity, Map.class);
+
+            if (tokenResponse == null || tokenResponse.get("access_token") == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            String accessTokenGoogle = tokenResponse.get("access_token").toString();
+
+            // 2) Fetch user info with Authorization header
+            HttpHeaders userHeaders = new HttpHeaders();
+            userHeaders.setBearerAuth(accessTokenGoogle);
+            HttpEntity<Void> userReq = new HttpEntity<>(userHeaders);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map> userResp = restTemplate.exchange(
+                    "https://openidconnect.googleapis.com/v1/userinfo",
+                    HttpMethod.GET,
+                    userReq,
+                    Map.class);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> userInfo = userResp.getBody();
+
+            if (userInfo == null || userInfo.get("email") == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            String email = userInfo.get("email").toString();
+            // String name = userInfo.get("name") != null ? userInfo.get("name").toString() : "Google User";
+
+            // 3) Check user in DB
+            Optional<User> userOptional = Optional.ofNullable(this.userService.handleGetUserByUsername(email));
+            if (userOptional.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            User user = userOptional.get();
+
+            ResLoginDTO res = new ResLoginDTO();
+            ResLoginDTO.UserLogin userLogin = new ResLoginDTO.UserLogin(
+                    user.getId(), user.getEmail(), user.getName(), user.getRole());
+            res.setUser(userLogin);
+            String siteAccessToken = this.securityUtil.createAccessToken(email, res);
+            res.setAccessToken(siteAccessToken);
+
+            return ResponseEntity.ok(res);
+        } catch (HttpClientErrorException ex) {
+            return ResponseEntity.status(ex.getStatusCode()).build();
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+    }
+
+    @PostMapping("/auth/google/register")
+    @ApiMessage("Register with Google Authorization Code")
+    public ResponseEntity<ResLoginDTO> googleRegister(@RequestParam("code") String code,
+            @RequestParam("redirectUri") String redirectUri,
+            @Value("${spring.security.oauth2.client.registration.google.client-id}") String clientId,
+            @Value("${spring.security.oauth2.client.registration.google.client-secret}") String clientSecret) {
+        try {
+            // 1) Exchange code for tokens (x-www-form-urlencoded)
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("code", code);
+            form.add("client_id", clientId);
+            form.add("client_secret", clientSecret);
+            form.add("redirect_uri", redirectUri);
+            form.add("grant_type", "authorization_code");
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            HttpEntity<MultiValueMap<String, String>> httpEntity = new HttpEntity<>(form, headers);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> tokenResponse = restTemplate.postForObject(
+                    "https://oauth2.googleapis.com/token", httpEntity, Map.class);
+
+            if (tokenResponse == null || tokenResponse.get("access_token") == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            String accessTokenGoogle = tokenResponse.get("access_token").toString();
+
+            // 2) Fetch user info with Authorization header
+            HttpHeaders userHeaders = new HttpHeaders();
+            userHeaders.setBearerAuth(accessTokenGoogle);
+            HttpEntity<Void> userReq = new HttpEntity<>(userHeaders);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map> userResp = restTemplate.exchange(
+                    "https://openidconnect.googleapis.com/v1/userinfo",
+                    HttpMethod.GET,
+                    userReq,
+                    Map.class);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> userInfo = userResp.getBody();
+
+            if (userInfo == null || userInfo.get("email") == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            String email = userInfo.get("email").toString();
+            String name = userInfo.get("name") != null ? userInfo.get("name").toString() : "Google User";
+
+            // 3) Check if user already exists
+            User existingUser = this.userService.handleGetUserByUsername(email);
+            if (existingUser != null) {
+                // User exists, treat as login
+                ResLoginDTO res = new ResLoginDTO();
+                ResLoginDTO.UserLogin userLogin = new ResLoginDTO.UserLogin(
+                        existingUser.getId(), existingUser.getEmail(), existingUser.getName(), existingUser.getRole());
+                res.setUser(userLogin);
+                String siteAccessToken = this.securityUtil.createAccessToken(email, res);
+                res.setAccessToken(siteAccessToken);
+
+                return ResponseEntity.ok(res);
+            }
+
+            // 4) Create new user
+            User newUser = new User();
+            newUser.setEmail(email);
+            newUser.setName(name);
+            newUser.setPassword("OAUTH2_USER"); // Default password for OAuth users
+            newUser.setAge(25); // Default age
+
+            User createdUser = this.userService.handleCreateUser(newUser);
+
+            // 5) Issue JWT and response
+            ResLoginDTO res = new ResLoginDTO();
+            ResLoginDTO.UserLogin userLogin = new ResLoginDTO.UserLogin(
+                    createdUser.getId(), createdUser.getEmail(), createdUser.getName(), createdUser.getRole());
+            res.setUser(userLogin);
+            String siteAccessToken = this.securityUtil.createAccessToken(email, res);
+            res.setAccessToken(siteAccessToken);
+
+            return ResponseEntity.ok(res);
+        } catch (HttpClientErrorException ex) {
+            return ResponseEntity.status(ex.getStatusCode()).build();
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+    }
+
+    @PostMapping("/auth/facebook/login")
+    @ApiMessage("Login with Facebook access token")
+    public ResponseEntity<ResLoginDTO> facebookLogin(@RequestParam("accessToken") String accessToken) {
+        try {
+            // Verify token and fetch user info
+            String url = "https://graph.facebook.com/me?fields=id,name,email&access_token=" + accessToken;
+            String response = restTemplate.getForObject(url, String.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> info = new com.fasterxml.jackson.databind.ObjectMapper().readValue(response, Map.class);
+
+            String email = info.get("email") != null ? info.get("email").toString() : null;
+            String facebookId = info.get("id") != null ? info.get("id").toString() : null;
+            String name = info.get("name") != null ? info.get("name").toString() : "Facebook User";
+
+            // Some FB accounts don't expose email; fallback to synthetic email
+            if (email == null && facebookId != null) {
+                email = facebookId + "@facebook.local";
+            }
+
+            if (email == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            User user = this.userService.handleGetUserByUsername(email);
+            if (user == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            ResLoginDTO res = new ResLoginDTO();
+            ResLoginDTO.UserLogin userLogin = new ResLoginDTO.UserLogin(
+                    user.getId(), user.getEmail(), user.getName(), user.getRole());
+            res.setUser(userLogin);
+            String siteAccessToken = this.securityUtil.createAccessToken(email, res);
+            res.setAccessToken(siteAccessToken);
+            return ResponseEntity.ok(res);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+    }
+
+    @PostMapping("/auth/facebook/register")
+    @ApiMessage("Register with Facebook access token")
+    public ResponseEntity<ResLoginDTO> facebookRegister(@RequestParam("accessToken") String accessToken) {
+        try {
+            // Verify token and fetch user info
+            String url = "https://graph.facebook.com/me?fields=id,name,email&access_token=" + accessToken;
+            String response = restTemplate.getForObject(url, String.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> info = new com.fasterxml.jackson.databind.ObjectMapper().readValue(response, Map.class);
+
+            String email = info.get("email") != null ? info.get("email").toString() : null;
+            String facebookId = info.get("id") != null ? info.get("id").toString() : null;
+            String name = info.get("name") != null ? info.get("name").toString() : "Facebook User";
+
+            // Fallback email for accounts without email permission
+            if (email == null && facebookId != null) {
+                email = facebookId + "@facebook.local";
+            }
+
+            if (email == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            }
+
+            User existing = this.userService.handleGetUserByUsername(email);
+            if (existing != null) {
+                ResLoginDTO res = new ResLoginDTO();
+                ResLoginDTO.UserLogin userLogin = new ResLoginDTO.UserLogin(
+                        existing.getId(), existing.getEmail(), existing.getName(), existing.getRole());
+                res.setUser(userLogin);
+                String siteAccessToken = this.securityUtil.createAccessToken(email, res);
+                res.setAccessToken(siteAccessToken);
+                return ResponseEntity.ok(res);
+            }
+
+            User newUser = new User();
+            newUser.setEmail(email);
+            newUser.setName(name);
+            newUser.setPassword("OAUTH2_USER");
+            newUser.setAge(25);
+            User created = this.userService.handleCreateUser(newUser);
+
+            ResLoginDTO res = new ResLoginDTO();
+            ResLoginDTO.UserLogin userLogin = new ResLoginDTO.UserLogin(
+                    created.getId(), created.getEmail(), created.getName(), created.getRole());
+            res.setUser(userLogin);
+            String siteAccessToken = this.securityUtil.createAccessToken(email, res);
+            res.setAccessToken(siteAccessToken);
+            return ResponseEntity.ok(res);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
     }
 }

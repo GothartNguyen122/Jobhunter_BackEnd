@@ -1,6 +1,5 @@
 package vn.hoidanit.jobhunter.controller;
 
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -17,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.turkraft.springfilter.boot.Filter;
-import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import vn.hoidanit.jobhunter.domain.Job;
 import vn.hoidanit.jobhunter.domain.response.ResultPaginationDTO;
@@ -116,5 +114,14 @@ public class JobController {
 
         return ResponseEntity.ok().body(this.jobService.userSearchAndFilter(
                 keyword, location, skills, minSalary, maxSalary, level, pageable));
+    }
+
+    @GetMapping("/jobs/company/{companyId}")
+    @ApiMessage("Get jobs by company ID")
+    public ResponseEntity<ResultPaginationDTO> getJobsByCompany(
+            @PathVariable("companyId") long companyId,
+            Pageable pageable) {
+
+        return ResponseEntity.ok().body(this.jobService.fetchJobsByCompany(companyId, pageable));
     }
 }
