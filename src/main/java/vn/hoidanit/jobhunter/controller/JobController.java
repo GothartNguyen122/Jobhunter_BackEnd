@@ -1,5 +1,8 @@
 package vn.hoidanit.jobhunter.controller;
 
+import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -16,12 +19,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.turkraft.springfilter.boot.Filter;
+ 
 import jakarta.validation.Valid;
 import vn.hoidanit.jobhunter.domain.Job;
 import vn.hoidanit.jobhunter.domain.response.ResultPaginationDTO;
 import vn.hoidanit.jobhunter.domain.response.job.ResCreateJobDTO;
 import vn.hoidanit.jobhunter.domain.response.job.ResUpdateJobDTO;
 import vn.hoidanit.jobhunter.service.JobService;
+import vn.hoidanit.jobhunter.service.ResumeService;
+import vn.hoidanit.jobhunter.domain.response.resume.ResFetchResumeDTO;
 import vn.hoidanit.jobhunter.util.annotation.ApiMessage;
 import vn.hoidanit.jobhunter.util.error.IdInvalidException;
 import java.util.Collections;
@@ -31,9 +37,11 @@ import java.util.Collections;
 public class JobController {
 
     private final JobService jobService;
+    private final ResumeService resumeService;
 
-    public JobController(JobService jobService) {
+    public JobController(JobService jobService, ResumeService resumeService) {
         this.jobService = jobService;
+        this.resumeService = resumeService;
     }
 
     @PostMapping("/jobs")
@@ -115,6 +123,19 @@ public class JobController {
         return ResponseEntity.ok().body(this.jobService.userSearchAndFilter(
                 keyword, location, skills, minSalary, maxSalary, level, pageable));
     }
+    @GetMapping("/jobs/resumes/{job_id}")
+    @ApiMessage("Get all resumes of Job")
+    public ResponseEntity<Map<String, Object>> getResumesByJob(@PathVariable("job_id") Long id) throws IdInvalidException {
+        Optional<Job> currentJob = this.jobService.fetchJobById(id);
+        if (!currentJob.isPresent()) {
+            throw new IdInvalidException("Job not found");
+        }
+        List<ResFetchResumeDTO> resumes = this.resumeService.fetchResumesByJobId(id);
+        Map<String, Object> body = new HashMap<>();
+        body.put("count", resumes != null ? resumes.size() : 0);
+        body.put("resumes", resumes);
+        return ResponseEntity.ok().body(body);
+    }    
 
     @GetMapping("/jobs/company/{companyId}")
     @ApiMessage("Get jobs by company ID")

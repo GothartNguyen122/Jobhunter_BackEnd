@@ -32,6 +32,8 @@ dependencies {
 	runtimeOnly("com.mysql:mysql-connector-j")
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.springframework.security:spring-security-test")
+	// implementation("javax.annotation:javax.annotation-api:1.3.2")
+	// implementation("com.google.code.findbugs:jsr305:3.0.2")
 }
 
 tasks.withType<Test> {
