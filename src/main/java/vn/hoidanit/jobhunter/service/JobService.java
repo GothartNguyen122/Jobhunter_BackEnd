@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,8 +22,12 @@ import vn.hoidanit.jobhunter.repository.CompanyRepository;
 import vn.hoidanit.jobhunter.repository.JobRepository;
 import vn.hoidanit.jobhunter.repository.ResumeRepository;
 import vn.hoidanit.jobhunter.repository.SkillRepository;
+import vn.hoidanit.jobhunter.repository.UserRepository;
+import vn.hoidanit.jobhunter.domain.User;
+import vn.hoidanit.jobhunter.util.SecurityUtil;
 import vn.hoidanit.jobhunter.util.constant.LevelEnum;
 import vn.hoidanit.jobhunter.util.error.IdInvalidException;
+import vn.hoidanit.jobhunter.service.SubscriberService;
 
 @Service
 public class JobService {
@@ -31,15 +36,21 @@ public class JobService {
     private final SkillRepository skillRepository;
     private final CompanyRepository companyRepository;
     private final ResumeRepository resumeRepository;
+    private final UserRepository userRepository;
+    private final SubscriberService subscriberService;
 
     public JobService(JobRepository jobRepository,
             SkillRepository skillRepository,
             CompanyRepository companyRepository,
-            ResumeRepository resumeRepository) {
+            ResumeRepository resumeRepository,
+            UserRepository userRepository,
+            SubscriberService subscriberService) {
         this.jobRepository = jobRepository;
         this.skillRepository = skillRepository;
         this.companyRepository = companyRepository;
         this.resumeRepository = resumeRepository;
+        this.userRepository = userRepository;
+        this.subscriberService = subscriberService;
     }
 
     public Optional<Job> fetchJobById(long id) {
@@ -87,6 +98,26 @@ public class JobService {
 
         // create job
         Job currentJob = this.jobRepository.save(j);
+
+        // Gửi email thông báo cho users có skills phù hợp (async - không block)
+        // Sử dụng @Async để không block request
+        System.out.println(">>> [JobService] Job created - ID: " + currentJob.getId() + ", Active: " + currentJob.isActive());
+        System.out.println(">>> [JobService] Job skills count: " + (currentJob.getSkills() != null ? currentJob.getSkills().size() : 0));
+        
+        if (currentJob.isActive() && currentJob.getSkills() != null && !currentJob.getSkills().isEmpty()) {
+            try {
+                System.out.println(">>> [JobService] Triggering email notification for job ID: " + currentJob.getId());
+                // Gọi async để không block transaction
+                this.subscriberService.sendNotificationForNewJobAsync(currentJob);
+                System.out.println(">>> [JobService] Email notification triggered successfully");
+            } catch (Exception e) {
+                System.err.println(">>> [JobService] Lỗi khi trigger gửi email thông báo: " + e.getMessage());
+                e.printStackTrace();
+                // Không throw exception để không ảnh hưởng đến việc tạo job
+            }
+        } else {
+            System.out.println(">>> [JobService] Không gửi email - Job không active hoặc không có skills");
+        }
 
         // convert response
         ResCreateJobDTO dto = new ResCreateJobDTO();
@@ -289,5 +320,110 @@ public class JobService {
         rs.setResult(pageJobs.getContent());
 
         return rs;
+    }
+
+    /**
+     * Tìm công việc phù hợp với kỹ năng của user hiện tại
+     */
+    public ResultPaginationDTO fetchMatchingJobsForCurrentUser(Pageable pageable) {
+        String email = SecurityUtil.getCurrentUserLogin().orElse("");
+        if (email.isEmpty()) {
+            ResultPaginationDTO rs = new ResultPaginationDTO();
+            ResultPaginationDTO.Meta mt = new ResultPaginationDTO.Meta();
+            mt.setPage(1);
+            mt.setPageSize(pageable.getPageSize());
+            mt.setPages(0);
+            mt.setTotal(0);
+            rs.setMeta(mt);
+            rs.setResult(Collections.emptyList());
+            return rs;
+        }
+
+        User user = this.userRepository.findByEmail(email);
+        if (user == null || user.getSkills() == null || user.getSkills().isEmpty()) {
+            ResultPaginationDTO rs = new ResultPaginationDTO();
+            ResultPaginationDTO.Meta mt = new ResultPaginationDTO.Meta();
+            mt.setPage(1);
+            mt.setPageSize(pageable.getPageSize());
+            mt.setPages(0);
+            mt.setTotal(0);
+            rs.setMeta(mt);
+            rs.setResult(Collections.emptyList());
+            return rs;
+        }
+
+        // Tìm các job có chứa ít nhất một skill của user
+        Specification<Job> spec = (root, query, criteriaBuilder) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            
+            // Job phải active
+            predicates.add(criteriaBuilder.equal(root.get("active"), true));
+            
+            // Job phải có endDate trong tương lai hoặc null
+            predicates.add(
+                criteriaBuilder.or(
+                    criteriaBuilder.isNull(root.get("endDate")),
+                    criteriaBuilder.greaterThan(root.get("endDate"), java.time.Instant.now())
+                )
+            );
+            
+            // Job phải có ít nhất một skill trùng với skills của user
+            jakarta.persistence.criteria.Join<Job, Skill> skillsJoin = root.join("skills");
+            predicates.add(skillsJoin.in(user.getSkills()));
+            
+            query.distinct(true);
+            return criteriaBuilder.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        Page<Job> pageJobs = this.jobRepository.findAll(spec, pageable);
+        pageJobs.getContent().forEach(this::updateJobActiveStatus);
+
+        ResultPaginationDTO rs = new ResultPaginationDTO();
+        ResultPaginationDTO.Meta mt = new ResultPaginationDTO.Meta();
+
+        mt.setPage(pageable.getPageNumber() + 1);
+        mt.setPageSize(pageable.getPageSize());
+        mt.setPages(pageJobs.getTotalPages());
+        mt.setTotal(pageJobs.getTotalElements());
+
+        rs.setMeta(mt);
+        rs.setResult(pageJobs.getContent());
+
+        return rs;
+    }
+
+    /**
+     * Đếm số lượng công việc phù hợp với user hiện tại
+     */
+    public long countMatchingJobsForCurrentUser() {
+        String email = SecurityUtil.getCurrentUserLogin().orElse("");
+        if (email.isEmpty()) {
+            return 0;
+        }
+
+        User user = this.userRepository.findByEmail(email);
+        if (user == null || user.getSkills() == null || user.getSkills().isEmpty()) {
+            return 0;
+        }
+
+        Specification<Job> spec = (root, query, criteriaBuilder) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            
+            predicates.add(criteriaBuilder.equal(root.get("active"), true));
+            predicates.add(
+                criteriaBuilder.or(
+                    criteriaBuilder.isNull(root.get("endDate")),
+                    criteriaBuilder.greaterThan(root.get("endDate"), java.time.Instant.now())
+                )
+            );
+            
+            jakarta.persistence.criteria.Join<Job, Skill> skillsJoin = root.join("skills");
+            predicates.add(skillsJoin.in(user.getSkills()));
+            
+            query.distinct(true);
+            return criteriaBuilder.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        return this.jobRepository.count(spec);
     }
 }

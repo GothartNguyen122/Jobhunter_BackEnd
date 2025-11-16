@@ -1,13 +1,12 @@
 package vn.hoidanit.jobhunter.controller;
 
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.transaction.Transactional;
 import vn.hoidanit.jobhunter.service.EmailService;
-// import vn.hoidanit.jobhunter.service.SubscriberService;
+import vn.hoidanit.jobhunter.service.SubscriberService;
 import vn.hoidanit.jobhunter.util.annotation.ApiMessage;
 
 @RestController
@@ -15,27 +14,26 @@ import vn.hoidanit.jobhunter.util.annotation.ApiMessage;
 public class EmailController {
 
     private final EmailService emailService;
-    // private final SubscriberService subscriberService;
+    private final SubscriberService subscriberService;
 
-    public EmailController(EmailService emailService) {
+    public EmailController(EmailService emailService, SubscriberService subscriberService) {
         this.emailService = emailService;
-        // this.subscriberService = subscriberService;
+        this.subscriberService = subscriberService;
     }
 
-    // @GetMapping("/email")
-    // @ApiMessage("Send simple email")
-    // @Scheduled(cron = "*/30 * * * * *")
-    // @Transactional
-    // public String sendSimpleEmail() {
-    // // this.emailService.sendSimpleEmail();
-    // // this.emailService.sendEmailSync("ads.hoidanit@gmail.com", "test send
-    // email",
-    // // "<h1> <b> hello </b> </h1>", false,
-    // // true);
-    // // this.emailService.sendEmailFromTemplateSync("ads.hoidanit@gmail.com",
-    // "test
-    // // send email", "job");
-    // this.subscriberService.sendSubscribersEmailJobs();
-    // return "ok";
-    // }
+    /**
+     * Endpoint để test gửi email thông báo công việc mới (chỉ dùng cho testing)
+     * Gửi email cho tất cả users có skills phù hợp với các job mới trong 24h qua
+     */
+    @GetMapping("/email/test-notifications")
+    @ApiMessage("Test send job notifications email")
+    @Transactional
+    public String testSendJobNotifications() {
+        try {
+            this.subscriberService.sendJobNotificationsToUsers();
+            return "Đã gửi email thông báo thành công!";
+        } catch (Exception e) {
+            return "Lỗi khi gửi email: " + e.getMessage();
+        }
+    }
 }

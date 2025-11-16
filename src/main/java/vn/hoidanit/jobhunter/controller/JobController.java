@@ -124,4 +124,16 @@ public class JobController {
 
         return ResponseEntity.ok().body(this.jobService.fetchJobsByCompany(companyId, pageable));
     }
+
+    @GetMapping("/jobs/matching")
+    @ApiMessage("Get matching jobs for current user based on skills")
+    public ResponseEntity<ResultPaginationDTO> getMatchingJobs(Pageable pageable) {
+        return ResponseEntity.ok().body(this.jobService.fetchMatchingJobsForCurrentUser(pageable));
+    }
+
+    @GetMapping("/jobs/matching/count")
+    @ApiMessage("Get count of matching jobs for current user")
+    public ResponseEntity<Long> getMatchingJobsCount() {
+        return ResponseEntity.ok().body(this.jobService.countMatchingJobsForCurrentUser());
+    }
 }

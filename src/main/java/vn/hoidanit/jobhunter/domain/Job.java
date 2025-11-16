@@ -6,7 +6,6 @@ import java.util.List;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-import io.micrometer.common.lang.Nullable;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -47,6 +46,9 @@ public class Job {
     private double salary;
 
     private int quantity;
+
+    @Column(nullable = false, columnDefinition = "int default 0")
+    private int cluster = 0;
 
     @Enumerated(EnumType.STRING)
     private LevelEnum level;

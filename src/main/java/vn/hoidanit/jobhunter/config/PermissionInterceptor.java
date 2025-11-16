@@ -42,10 +42,17 @@ public class PermissionInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        // check permission
+        // Check if user is authenticated
         String email = SecurityUtil.getCurrentUserLogin().isPresent() == true
                 ? SecurityUtil.getCurrentUserLogin().get()
                 : "";
+        
+        // Allow authenticated users to access matching jobs endpoints without specific permission
+        if (email != null && !email.isEmpty() && isAuthenticatedUserEndpoint(path, httpMethod)) {
+            return true;
+        }
+
+        // check permission for other endpoints
         if (email != null && !email.isEmpty()) {
             User user = this.userService.handleGetUserByUsername(email);
             if (user != null) {
@@ -72,6 +79,28 @@ public class PermissionInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        return "/api/v1/career-articles".equals(path) && "GET".equalsIgnoreCase(method);
+        // Public GET endpoints
+        if ("GET".equalsIgnoreCase(method)) {
+            return "/api/v1/career-articles".equals(path);
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if endpoint is accessible by all authenticated users (no specific permission required)
+     */
+    private boolean isAuthenticatedUserEndpoint(String path, String method) {
+        if (path == null || method == null) {
+            return false;
+        }
+
+        // Endpoints accessible by all authenticated users
+        if ("GET".equalsIgnoreCase(method)) {
+            return "/api/v1/jobs/matching".equals(path) 
+                || "/api/v1/jobs/matching/count".equals(path);
+        }
+
+        return false;
     }
 }
