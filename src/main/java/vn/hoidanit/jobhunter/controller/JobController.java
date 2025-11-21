@@ -46,7 +46,7 @@ public class JobController {
 
     @PostMapping("/jobs")
     @ApiMessage("Create a job")
-    public ResponseEntity<ResCreateJobDTO> create(@Valid @RequestBody Job job) {
+    public ResponseEntity<ResCreateJobDTO> create(@Valid @RequestBody Job job) throws IdInvalidException {
         // Tạo mới job
         ResCreateJobDTO createdJob = this.jobService.create(job);
         return ResponseEntity.status(HttpStatus.CREATED).body(createdJob);
@@ -118,10 +118,12 @@ public class JobController {
             @RequestParam(value = "minSalary", required = false) Double minSalary,
             @RequestParam(value = "maxSalary", required = false) Double maxSalary,
             @RequestParam(value = "level", required = false) String level,
+            @RequestParam(value = "companyName", required = false) String companyName,
+            @RequestParam(value = "categories", required = false) String categories,
             Pageable pageable) {
 
         return ResponseEntity.ok().body(this.jobService.userSearchAndFilter(
-                keyword, location, skills, minSalary, maxSalary, level, pageable));
+                keyword, location, skills, minSalary, maxSalary, level, companyName, categories, pageable));
     }
     @GetMapping("/jobs/resumes/{job_id}")
     @ApiMessage("Get all resumes of Job")

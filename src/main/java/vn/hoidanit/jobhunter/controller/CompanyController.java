@@ -19,9 +19,12 @@ import com.turkraft.springfilter.boot.Filter;
 
 import jakarta.validation.Valid;
 import vn.hoidanit.jobhunter.domain.Company;
+import vn.hoidanit.jobhunter.domain.request.ReqCompanyReviewDTO;
+import vn.hoidanit.jobhunter.domain.response.ResCompanyReviewDTO;
 import vn.hoidanit.jobhunter.domain.response.ResultPaginationDTO;
 import vn.hoidanit.jobhunter.service.CompanyService;
 import vn.hoidanit.jobhunter.util.annotation.ApiMessage;
+import vn.hoidanit.jobhunter.util.error.IdInvalidException;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -63,5 +66,30 @@ public class CompanyController {
     public ResponseEntity<Company> fetchCompanyById(@PathVariable("id") long id) {
         Optional<Company> cOptional = this.companyService.findById(id);
         return ResponseEntity.ok().body(cOptional.get());
+    }
+
+    @PostMapping("/companies/my-company")
+    @ApiMessage("HR creates or updates their own company")
+    public ResponseEntity<Company> createOrUpdateMyCompany(@Valid @RequestBody Company reqCompany) throws IdInvalidException {
+        Company company = this.companyService.handleCreateOrUpdateMyCompany(reqCompany);
+        return ResponseEntity.ok(company);
+    }
+
+    @GetMapping("/companies/my-company")
+    @ApiMessage("HR gets their own company")
+    public ResponseEntity<Company> getMyCompany() throws IdInvalidException {
+        Optional<Company> company = this.companyService.getMyCompany();
+        if (company.isPresent()) {
+            return ResponseEntity.ok(company.get());
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+    }
+
+    @PostMapping("/companies/{id}/review")
+    @ApiMessage("Admin reviews HR company information")
+    public ResponseEntity<ResCompanyReviewDTO> reviewCompany(
+            @PathVariable("id") long id,
+            @Valid @RequestBody ReqCompanyReviewDTO request) throws IdInvalidException {
+        return ResponseEntity.ok(this.companyService.handleReviewCompany(id, request));
     }
 }

@@ -82,12 +82,6 @@ public class DatabaseInitializer implements CommandLineRunner {
             arr.add(new Permission("Get a user by id", "/api/v1/users/{id}", "GET", "USERS"));
             arr.add(new Permission("Get users with pagination", "/api/v1/users", "GET", "USERS"));
 
-            arr.add(new Permission("Create a subscriber", "/api/v1/subscribers", "POST", "SUBSCRIBERS"));
-            arr.add(new Permission("Update a subscriber", "/api/v1/subscribers", "PUT", "SUBSCRIBERS"));
-            arr.add(new Permission("Delete a subscriber", "/api/v1/subscribers/{id}", "DELETE", "SUBSCRIBERS"));
-            arr.add(new Permission("Get a subscriber by id", "/api/v1/subscribers/{id}", "GET", "SUBSCRIBERS"));
-            arr.add(new Permission("Get subscribers with pagination", "/api/v1/subscribers", "GET", "SUBSCRIBERS"));
-
             arr.add(new Permission("Download a file", "/api/v1/files", "POST", "FILES"));
             arr.add(new Permission("Upload a file", "/api/v1/files", "GET", "FILES"));
 
@@ -97,16 +91,84 @@ public class DatabaseInitializer implements CommandLineRunner {
             this.permissionRepository.saveAll(arr);
         }
 
+        // Tạo các role cần thiết nếu chưa tồn tại
         if (countRoles == 0) {
             List<Permission> allPermissions = this.permissionRepository.findAll();
 
+            // Tạo role SUPER_ADMIN
             Role adminRole = new Role();
             adminRole.setName("SUPER_ADMIN");
             adminRole.setDescription("Admin thì full permissions");
             adminRole.setActive(true);
             adminRole.setPermissions(allPermissions);
-
             this.roleRepository.save(adminRole);
+
+            // Tạo role NORMAL_USER (Ứng viên) - không có permission nào
+            Role normalUserRole = new Role();
+            normalUserRole.setName("NORMAL_USER");
+            normalUserRole.setDescription("Role cho ứng viên tìm việc");
+            normalUserRole.setActive(true);
+            normalUserRole.setPermissions(new ArrayList<>()); // Ứng viên không có permission quản lý
+            this.roleRepository.save(normalUserRole);
+
+            // Tạo role HR (Nhà tuyển dụng) - có permission quản lý job và company của mình
+            Role hrRole = new Role();
+            hrRole.setName("HR");
+            hrRole.setDescription("Role cho nhà tuyển dụng");
+            hrRole.setActive(true);
+            // HR có permission quản lý job và company
+            List<Permission> hrPermissions = allPermissions.stream()
+                    .filter(p -> p.getModule().equals("JOBS") || p.getModule().equals("COMPANIES") || p.getModule().equals("RESUMES"))
+                    .collect(java.util.stream.Collectors.toList());
+            hrRole.setPermissions(hrPermissions);
+            this.roleRepository.save(hrRole);
+
+            // Tạo role HR_PENDING - chỉ được quản lý thông tin công ty của mình
+            Role hrPendingRole = new Role();
+            hrPendingRole.setName("HR_PENDING");
+            hrPendingRole.setDescription("Role cho HR chờ admin phê duyệt công ty");
+            hrPendingRole.setActive(true);
+            List<Permission> hrPendingPermissions = allPermissions.stream()
+                    .filter(p -> p.getModule().equals("COMPANIES") && p.getMethod().equalsIgnoreCase("GET"))
+                    .collect(java.util.stream.Collectors.toList());
+            hrPendingRole.setPermissions(hrPendingPermissions);
+            this.roleRepository.save(hrPendingRole);
+        } else {
+            // Kiểm tra và tạo các role còn thiếu nếu database đã có data
+            if (this.roleRepository.findByName("NORMAL_USER") == null) {
+                Role normalUserRole = new Role();
+                normalUserRole.setName("NORMAL_USER");
+                normalUserRole.setDescription("Role cho ứng viên tìm việc");
+                normalUserRole.setActive(true);
+                normalUserRole.setPermissions(new ArrayList<>());
+                this.roleRepository.save(normalUserRole);
+            }
+            
+            if (this.roleRepository.findByName("HR") == null) {
+                List<Permission> allPermissions = this.permissionRepository.findAll();
+                Role hrRole = new Role();
+                hrRole.setName("HR");
+                hrRole.setDescription("Role cho nhà tuyển dụng");
+                hrRole.setActive(true);
+                List<Permission> hrPermissions = allPermissions.stream()
+                        .filter(p -> p.getModule().equals("JOBS") || p.getModule().equals("COMPANIES") || p.getModule().equals("RESUMES"))
+                        .collect(java.util.stream.Collectors.toList());
+                hrRole.setPermissions(hrPermissions);
+                this.roleRepository.save(hrRole);
+            }
+
+            if (this.roleRepository.findByName("HR_PENDING") == null) {
+                List<Permission> allPermissions = this.permissionRepository.findAll();
+                Role hrPendingRole = new Role();
+                hrPendingRole.setName("HR_PENDING");
+                hrPendingRole.setDescription("Role cho HR chờ admin phê duyệt công ty");
+                hrPendingRole.setActive(true);
+                List<Permission> hrPendingPermissions = allPermissions.stream()
+                        .filter(p -> p.getModule().equals("COMPANIES") && p.getMethod().equalsIgnoreCase("GET"))
+                        .collect(java.util.stream.Collectors.toList());
+                hrPendingRole.setPermissions(hrPendingPermissions);
+                this.roleRepository.save(hrPendingRole);
+            }
         }
 
         if (countUsers == 0) {
@@ -136,39 +198,46 @@ public class DatabaseInitializer implements CommandLineRunner {
             long articleCount = this.careerArticleRepository.count();
             if (articleCount == 0) {
                 ArrayList<CareerArticle> articles = new ArrayList<>();
+                // Sample career articles với links chính thức, có thể truy cập được
+                // Admin có thể quản lý và cập nhật links thực tế qua admin panel
+                
                 CareerArticle a1 = new CareerArticle();
-                a1.setTitle("Mệnh Thổ hợp số gì? Chọn sim may mắn để lương nhân 2");
-                a1.setCategory("THƯ GIÃN");
-                a1.setCategoryColor("#f0f0f0");
-                a1.setImage("https://images.unsplash.com/photo-1573164713714-d95e436ab8d6?w=400");
-                a1.setLink("https://cafef.vn/");
+                a1.setTitle("Xu hướng nghề nghiệp 2024: Những ngành nghề hot nhất tại Việt Nam");
+                a1.setDescription("Phân tích chi tiết về các ngành nghề đang phát triển mạnh tại Việt Nam trong năm 2024, từ công nghệ thông tin đến marketing số và tài chính.");
+                a1.setCategory("XU HƯỚNG NGHỀ NGHIỆP");
+                a1.setCategoryColor("#e6f7ff");
+                a1.setImage("https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800");
+                a1.setLink("https://vnexpress.net/kinh-te-viec-lam"); // Link chính thức VnExpress
                 a1.setActive(true);
                 articles.add(a1);
 
                 CareerArticle a2 = new CareerArticle();
-                a2.setTitle("Mệnh Thổ hợp cây gì? Top cây để bàn làm việc mang tài lộc & sự nghiệp");
-                a2.setCategory("THƯ GIÃN");
-                a2.setCategoryColor("#e6f7ff");
-                a2.setImage("https://images.unsplash.com/photo-1497366216548-37526070297c?w=400");
-                a2.setLink("https://vnexpress.net/");
+                a2.setTitle("Báo cáo thị trường lao động Q4/2024: Mức lương trung bình tăng 15%");
+                a2.setDescription("Báo cáo mới nhất về tình hình thị trường lao động Việt Nam, phân tích mức lương, nhu cầu tuyển dụng và xu hướng việc làm theo ngành nghề.");
+                a2.setCategory("THỊ TRƯỜNG LAO ĐỘNG");
+                a2.setCategoryColor("#fff7e6");
+                a2.setImage("https://images.unsplash.com/photo-1552664730-d307ca884978?w=800");
+                a2.setLink("https://www.vietnamworks.com"); // Link chính thức VietnamWorks
                 a2.setActive(true);
                 articles.add(a2);
 
                 CareerArticle a3 = new CareerArticle();
-                a3.setTitle("JobHunter đồng hành cùng các trường Đại học trong sự kiện tuyển dụng");
-                a3.setCategory("SỰ KIỆN NGHỀ NGHIỆP");
-                a3.setCategoryColor("#fff7e6");
-                a3.setImage("https://images.unsplash.com/photo-1511578314322-379afb476865?w=400");
-                a3.setLink("https://www.linkedin.com/");
+                a3.setTitle("Top 10 kỹ năng mềm quan trọng nhất trong năm 2024");
+                a3.setDescription("Danh sách các kỹ năng mềm được nhà tuyển dụng đánh giá cao nhất, bao gồm giao tiếp, làm việc nhóm, tư duy phản biện và khả năng thích ứng.");
+                a3.setCategory("KỸ NĂNG NGHỀ NGHIỆP");
+                a3.setCategoryColor("#f6ffed");
+                a3.setImage("https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800");
+                a3.setLink("https://www.topcv.vn"); // Link chính thức TopCV
                 a3.setActive(true);
                 articles.add(a3);
 
                 CareerArticle a4 = new CareerArticle();
-                a4.setTitle("JobHunter giải mã xu hướng thị trường lao động cùng hơn 700 lãnh đạo doanh nghiệp");
-                a4.setCategory("BÁO CÁO - KHẢO SÁT");
-                a4.setCategoryColor("#f6ffed");
-                a4.setImage("https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400");
-                a4.setLink("https://google.com/");
+                a4.setTitle("Remote Work: Tương lai của môi trường làm việc hiện đại");
+                a4.setDescription("Phân tích về xu hướng làm việc từ xa, những lợi ích và thách thức, cùng với các công cụ và kỹ năng cần thiết để thành công trong môi trường remote.");
+                a4.setCategory("XU HƯỚNG NGHỀ NGHIỆP");
+                a4.setCategoryColor("#e6f7ff");
+                a4.setImage("https://images.unsplash.com/photo-1551434678-e076c223a692?w=800");
+                a4.setLink("https://www.linkedin.com/learning/topics/career-development"); // Link chính thức LinkedIn Learning
                 a4.setActive(true);
                 articles.add(a4);
 

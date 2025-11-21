@@ -29,6 +29,7 @@ import vn.hoidanit.jobhunter.domain.response.resume.ResUpdateResumeDTO;
 import vn.hoidanit.jobhunter.service.ResumeService;
 import vn.hoidanit.jobhunter.service.UserService;
 import vn.hoidanit.jobhunter.service.JobService;
+import vn.hoidanit.jobhunter.repository.JobRepository;
 import vn.hoidanit.jobhunter.util.SecurityUtil;
 import vn.hoidanit.jobhunter.util.annotation.ApiMessage;
 import vn.hoidanit.jobhunter.util.error.IdInvalidException;
@@ -43,6 +44,7 @@ public class ResumeController {
     private final ResumeService resumeService;
     private final UserService userService;
     private final JobService jobService;
+    private final JobRepository jobRepository;
 
     private final FilterBuilder filterBuilder;
     private final FilterSpecificationConverter filterSpecificationConverter;
@@ -51,11 +53,13 @@ public class ResumeController {
             ResumeService resumeService,
             UserService userService,
             JobService jobService,
+            JobRepository jobRepository,
             FilterBuilder filterBuilder,
             FilterSpecificationConverter filterSpecificationConverter) {
         this.resumeService = resumeService;
         this.userService = userService;
         this.jobService = jobService;
+        this.jobRepository = jobRepository;
         this.filterBuilder = filterBuilder;
         this.filterSpecificationConverter = filterSpecificationConverter;
     }
@@ -235,7 +239,10 @@ public class ResumeController {
         if (currentUser != null) {
             Company userCompany = currentUser.getCompany();
             if (userCompany != null) {
-                List<Job> companyJobs = userCompany.getJobs();
+                // Query jobs từ repository thay vì dùng lazy loading
+                List<Job> companyJobs = this.jobRepository.findAll((root, query, criteriaBuilder) -> 
+                    criteriaBuilder.equal(root.get("company").get("id"), userCompany.getId())
+                );
                 if (companyJobs != null && companyJobs.size() > 0) {
                     arrJobIds = companyJobs.stream().map(x -> x.getId())
                             .collect(Collectors.toList());

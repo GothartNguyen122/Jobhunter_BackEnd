@@ -2,6 +2,7 @@ package vn.hoidanit.jobhunter.repository;
 
 import java.util.List;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,7 @@ import vn.hoidanit.jobhunter.domain.User;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> {
+    @EntityGraph(attributePaths = { "role", "role.permissions", "company" })
     User findByEmail(String email);
 
     boolean existsByEmail(String email);

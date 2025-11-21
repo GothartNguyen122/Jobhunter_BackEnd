@@ -51,6 +51,10 @@ public class Resume {
     @JoinColumn(name = "job_id")
     private Job job;
 
+    @ManyToOne
+    @JoinColumn(name = "user_cv_id")
+    private UserCv userCv;
+
     @PrePersist
     public void handleBeforeCreate() {
         this.createdBy = SecurityUtil.getCurrentUserLogin().isPresent() == true

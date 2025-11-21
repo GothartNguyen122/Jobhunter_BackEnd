@@ -30,12 +30,16 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import jakarta.validation.Valid;
+import vn.hoidanit.jobhunter.domain.Company;
+import vn.hoidanit.jobhunter.domain.Role;
 import vn.hoidanit.jobhunter.domain.User;
 import vn.hoidanit.jobhunter.domain.request.ReqLoginDTO;
 import vn.hoidanit.jobhunter.domain.request.ReqRegisterDTO;
 import vn.hoidanit.jobhunter.domain.response.ResCreateUserDTO;
 import vn.hoidanit.jobhunter.domain.response.ResLoginDTO;
 import vn.hoidanit.jobhunter.domain.response.ResUserDTO;
+import vn.hoidanit.jobhunter.repository.RoleRepository;
+import vn.hoidanit.jobhunter.service.CompanyService;
 import vn.hoidanit.jobhunter.service.UserService;
 import vn.hoidanit.jobhunter.util.SecurityUtil;
 import vn.hoidanit.jobhunter.util.annotation.ApiMessage;
@@ -48,8 +52,14 @@ public class AuthController {
     private final AuthenticationManagerBuilder authenticationManagerBuilder;
     private final SecurityUtil securityUtil;
     private final UserService userService;
+    private final CompanyService companyService;
+    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final RestTemplate restTemplate;
+
+    private static final String ROLE_NORMAL_USER = "NORMAL_USER";
+    private static final String ROLE_HR = "HR";
+    private static final String ROLE_HR_PENDING = "HR_PENDING";
 
     @Value("${hoidanit.jwt.refresh-token-validity-in-seconds}")
     private long refreshTokenExpiration;
@@ -64,11 +74,15 @@ public class AuthController {
             AuthenticationManagerBuilder authenticationManagerBuilder,
             SecurityUtil securityUtil,
             UserService userService,
+            CompanyService companyService,
+            RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             RestTemplate restTemplate) {
         this.authenticationManagerBuilder = authenticationManagerBuilder;
         this.securityUtil = securityUtil;
         this.userService = userService;
+        this.companyService = companyService;
+        this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.restTemplate = restTemplate;
     }
@@ -236,8 +250,26 @@ public class AuthController {
         String hashPassword = this.passwordEncoder.encode(registerDTO.getPassword());
         newUser.setPassword(hashPassword);
 
+        String accountType = Optional.ofNullable(registerDTO.getAccountType()).orElse("CANDIDATE");
+
+        if ("HR".equalsIgnoreCase(accountType)) {
+            // HR đăng ký với trạng thái chờ phê duyệt
+            newUser.setRole(this.getRoleOrThrow(ROLE_HR_PENDING));
+            newUser.setCompany(null);
+        } else {
+            newUser.setRole(this.getRoleOrThrow(ROLE_NORMAL_USER));
+        }
+
         User createdUser = this.userService.handleCreateUser(newUser);
         return ResponseEntity.status(HttpStatus.CREATED).body(this.userService.convertToResCreateUserDTO(createdUser));
+    }
+
+    private Role getRoleOrThrow(String roleName) throws IdInvalidException {
+        Role role = this.roleRepository.findByName(roleName);
+        if (role == null) {
+            throw new IdInvalidException("Role " + roleName + " chưa được cấu hình. Vui lòng tạo role này trước.");
+        }
+        return role;
     }
 
     @PostMapping("/auth/google/login")

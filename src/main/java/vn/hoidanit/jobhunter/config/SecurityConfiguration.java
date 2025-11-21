@@ -51,6 +51,7 @@ public class SecurityConfiguration {
                 "/api/v1/auth/google/login", "/api/v1/auth/google/register",
                 "/api/v1/auth/facebook/login", "/api/v1/auth/facebook/register",
                 "/api/v1/career-articles",
+                "/api/v1/categories",
                 "/api/v1/feedback",
                 "/storage/**",
                 "/api/v1/email/**",
@@ -68,6 +69,7 @@ public class SecurityConfiguration {
                                 .requestMatchers(HttpMethod.GET, "/api/v1/companies/**").permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/v1/jobs/**").permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/v1/skills/**").permitAll()
+                                .requestMatchers(HttpMethod.GET, "/api/v1/categories/**").permitAll()
                                 .requestMatchers(HttpMethod.GET, "/api/v1/users/**").permitAll()
 
                                 .anyRequest().authenticated())

@@ -30,12 +30,12 @@ public class PermissionInterceptor implements HandlerInterceptor {
             throws Exception {
 
         String path = (String) request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
-        String requestURI = request.getRequestURI();
         String httpMethod = request.getMethod();
-        System.out.println(">>> RUN preHandle");
-        System.out.println(">>> path= " + path);
-        System.out.println(">>> httpMethod= " + httpMethod);
-        System.out.println(">>> requestURI= " + requestURI);
+        // Debug logs - disabled for production
+        // System.out.println(">>> RUN preHandle");
+        // System.out.println(">>> path= " + path);
+        // System.out.println(">>> httpMethod= " + httpMethod);
+        // System.out.println(">>> requestURI= " + request.getRequestURI());
 
         // Skip permission check for public endpoints that should be accessible even when user is authenticated
         if (isPublicEndpoint(path, httpMethod)) {
@@ -81,7 +81,8 @@ public class PermissionInterceptor implements HandlerInterceptor {
 
         // Public GET endpoints
         if ("GET".equalsIgnoreCase(method)) {
-            return "/api/v1/career-articles".equals(path);
+            return "/api/v1/career-articles".equals(path)
+                    || "/api/v1/categories".equals(path);
         }
 
         return false;
@@ -97,8 +98,18 @@ public class PermissionInterceptor implements HandlerInterceptor {
 
         // Endpoints accessible by all authenticated users
         if ("GET".equalsIgnoreCase(method)) {
-            return "/api/v1/jobs/matching".equals(path) 
-                || "/api/v1/jobs/matching/count".equals(path);
+            return "/api/v1/jobs/matching".equals(path)
+                    || "/api/v1/jobs/matching/count".equals(path)
+                    || "/api/v1/favorites/jobs".equals(path)
+                    || "/api/v1/favorites/companies".equals(path)
+                    || "/api/v1/favorites/jobs/check/{jobId}".equals(path)
+                    || "/api/v1/favorites/companies/check/{companyId}".equals(path);
+        } else if ("POST".equalsIgnoreCase(method)) {
+            return "/api/v1/favorites/jobs/{jobId}".equals(path)
+                    || "/api/v1/favorites/companies/{companyId}".equals(path);
+        } else if ("DELETE".equalsIgnoreCase(method)) {
+            return "/api/v1/favorites/jobs/{jobId}".equals(path)
+                    || "/api/v1/favorites/companies/{companyId}".equals(path);
         }
 
         return false;

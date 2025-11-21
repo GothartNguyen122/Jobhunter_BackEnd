@@ -5,20 +5,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.transaction.Transactional;
-import vn.hoidanit.jobhunter.service.EmailService;
-import vn.hoidanit.jobhunter.service.SubscriberService;
+import vn.hoidanit.jobhunter.service.JobAlertService;
 import vn.hoidanit.jobhunter.util.annotation.ApiMessage;
 
 @RestController
 @RequestMapping("/api/v1")
 public class EmailController {
 
-    private final EmailService emailService;
-    private final SubscriberService subscriberService;
+    private final JobAlertService jobAlertService;
 
-    public EmailController(EmailService emailService, SubscriberService subscriberService) {
-        this.emailService = emailService;
-        this.subscriberService = subscriberService;
+    public EmailController(JobAlertService jobAlertService) {
+        this.jobAlertService = jobAlertService;
     }
 
     /**
@@ -30,7 +27,7 @@ public class EmailController {
     @Transactional
     public String testSendJobNotifications() {
         try {
-            this.subscriberService.sendJobNotificationsToUsers();
+            this.jobAlertService.sendDailyJobAlerts();
             return "Đã gửi email thông báo thành công!";
         } catch (Exception e) {
             return "Lỗi khi gửi email: " + e.getMessage();

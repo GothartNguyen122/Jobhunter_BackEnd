@@ -27,30 +27,33 @@ import vn.hoidanit.jobhunter.domain.User;
 import vn.hoidanit.jobhunter.util.SecurityUtil;
 import vn.hoidanit.jobhunter.util.constant.LevelEnum;
 import vn.hoidanit.jobhunter.util.error.IdInvalidException;
-import vn.hoidanit.jobhunter.service.SubscriberService;
+import vn.hoidanit.jobhunter.service.JobAlertService;
 
 @Service
 public class JobService {
+
+    private static final String ROLE_HR = "HR";
+    private static final String ROLE_HR_PENDING = "HR_PENDING";
 
     private final JobRepository jobRepository;
     private final SkillRepository skillRepository;
     private final CompanyRepository companyRepository;
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
-    private final SubscriberService subscriberService;
+    private final JobAlertService jobAlertService;
 
     public JobService(JobRepository jobRepository,
             SkillRepository skillRepository,
             CompanyRepository companyRepository,
             ResumeRepository resumeRepository,
             UserRepository userRepository,
-            SubscriberService subscriberService) {
+            JobAlertService jobAlertService) {
         this.jobRepository = jobRepository;
         this.skillRepository = skillRepository;
         this.companyRepository = companyRepository;
         this.resumeRepository = resumeRepository;
         this.userRepository = userRepository;
-        this.subscriberService = subscriberService;
+        this.jobAlertService = jobAlertService;
     }
 
     public Optional<Job> fetchJobById(long id) {
@@ -77,7 +80,25 @@ public class JobService {
         }
     }
 
-    public ResCreateJobDTO create(Job j) {
+    public ResCreateJobDTO create(Job j) throws IdInvalidException {
+        // Get current user
+        String email = SecurityUtil.getCurrentUserLogin()
+                .orElseThrow(() -> new IdInvalidException("Không tìm thấy thông tin đăng nhập"));
+        User currentUser = this.userRepository.findByEmail(email);
+        
+        // Check if user is HR (including pending) and has company
+        if (currentUser != null && isHrLike(currentUser)) {
+            if (currentUser.getCompany() == null) {
+                throw new IdInvalidException("Vui lòng hoàn tất thông tin công ty trước khi đăng tin tuyển dụng");
+            }
+            // Only approved HR can create jobs
+            if (ROLE_HR_PENDING.equalsIgnoreCase(currentUser.getRole().getName())) {
+                throw new IdInvalidException("Vui lòng chờ admin phê duyệt thông tin công ty trước khi đăng tin tuyển dụng");
+            }
+            // Auto-assign HR's company to job
+            j.setCompany(currentUser.getCompany());
+        }
+
         // check skills
         if (j.getSkills() != null) {
             List<Long> reqSkills = j.getSkills()
@@ -88,8 +109,8 @@ public class JobService {
             j.setSkills(dbSkills);
         }
 
-        // check company
-        if (j.getCompany() != null) {
+        // check company (for admin users who can specify company)
+        if (j.getCompany() != null && j.getCompany().getId() > 0) {
             Optional<Company> cOptional = this.companyRepository.findById(j.getCompany().getId());
             if (cOptional.isPresent()) {
                 j.setCompany(cOptional.get());
@@ -101,23 +122,25 @@ public class JobService {
 
         // Gửi email thông báo cho users có skills phù hợp (async - không block)
         // Sử dụng @Async để không block request
-        System.out.println(">>> [JobService] Job created - ID: " + currentJob.getId() + ", Active: " + currentJob.isActive());
-        System.out.println(">>> [JobService] Job skills count: " + (currentJob.getSkills() != null ? currentJob.getSkills().size() : 0));
+        // Debug logs disabled
+        // System.out.println(">>> [JobService] Job created - ID: " + currentJob.getId() + ", Active: " + currentJob.isActive());
+        // System.out.println(">>> [JobService] Job skills count: " + (currentJob.getSkills() != null ? currentJob.getSkills().size() : 0));
         
         if (currentJob.isActive() && currentJob.getSkills() != null && !currentJob.getSkills().isEmpty()) {
             try {
-                System.out.println(">>> [JobService] Triggering email notification for job ID: " + currentJob.getId());
+                // System.out.println(">>> [JobService] Triggering email notification for job ID: " + currentJob.getId());
                 // Gọi async để không block transaction
-                this.subscriberService.sendNotificationForNewJobAsync(currentJob);
-                System.out.println(">>> [JobService] Email notification triggered successfully");
+                this.jobAlertService.sendNotificationForNewJobAsync(currentJob);
+                // System.out.println(">>> [JobService] Email notification triggered successfully");
             } catch (Exception e) {
-                System.err.println(">>> [JobService] Lỗi khi trigger gửi email thông báo: " + e.getMessage());
-                e.printStackTrace();
+                // System.err.println(">>> [JobService] Lỗi khi trigger gửi email thông báo: " + e.getMessage());
+                // e.printStackTrace();
                 // Không throw exception để không ảnh hưởng đến việc tạo job
             }
-        } else {
-            System.out.println(">>> [JobService] Không gửi email - Job không active hoặc không có skills");
         }
+        // else {
+        //     System.out.println(">>> [JobService] Không gửi email - Job không active hoặc không có skills");
+        // }
 
         // convert response
         ResCreateJobDTO dto = new ResCreateJobDTO();
@@ -142,7 +165,28 @@ public class JobService {
         return dto;
     }
 
-    public ResUpdateJobDTO update(Job j, Job jobInDB) {
+    public ResUpdateJobDTO update(Job j, Job jobInDB) throws IdInvalidException {
+        // Get current user
+        String email = SecurityUtil.getCurrentUserLogin()
+                .orElseThrow(() -> new IdInvalidException("Không tìm thấy thông tin đăng nhập"));
+        User currentUser = this.userRepository.findByEmail(email);
+        
+        // Check if user is HR (case-insensitive)
+        if (isHrLike(currentUser)) {
+            if (currentUser.getCompany() == null) {
+                throw new IdInvalidException("Vui lòng hoàn tất thông tin công ty trước khi cập nhật tin tuyển dụng");
+            }
+            // Only approved HR can update jobs
+            if (ROLE_HR_PENDING.equalsIgnoreCase(currentUser.getRole().getName())) {
+                throw new IdInvalidException("Vui lòng chờ admin phê duyệt thông tin công ty trước khi cập nhật tin tuyển dụng");
+            }
+            // HR can only update jobs from their own company
+            if (jobInDB.getCompany() == null || jobInDB.getCompany().getId() != currentUser.getCompany().getId()) {
+                throw new IdInvalidException("Bạn chỉ có quyền cập nhật tin tuyển dụng của công ty mình");
+            }
+            // Ensure job stays with HR's company
+            jobInDB.setCompany(currentUser.getCompany());
+        }
 
         // check skills
         if (j.getSkills() != null) {
@@ -154,11 +198,14 @@ public class JobService {
             jobInDB.setSkills(dbSkills);
         }
 
-        // check company
-        if (j.getCompany() != null) {
+        // check company (for admin users who can specify company)
+        if (j.getCompany() != null && j.getCompany().getId() > 0) {
             Optional<Company> cOptional = this.companyRepository.findById(j.getCompany().getId());
             if (cOptional.isPresent()) {
-                jobInDB.setCompany(cOptional.get());
+                // Only allow admin to change company, HR's company is already set above
+                if (currentUser == null || !isHrLike(currentUser)) {
+                    jobInDB.setCompany(cOptional.get());
+                }
             }
         }
 
@@ -207,7 +254,34 @@ public class JobService {
     }
 
     public ResultPaginationDTO fetchAll(Specification<Job> spec, Pageable pageable) {
-        Page<Job> pageUser = this.jobRepository.findAll(spec, pageable);
+        // Check if current user là HR (kể cả đang chờ duyệt), nếu vậy chỉ xem job của công ty mình
+        Specification<Job> finalSpec = spec;
+        try {
+            String email = SecurityUtil.getCurrentUserLogin().orElse(null);
+            if (email != null) {
+                User currentUser = this.userRepository.findByEmail(email);
+                if (isHrLike(currentUser)) {
+                    if (currentUser.getCompany() != null) {
+                        Specification<Job> hrSpec = (root, query, criteriaBuilder) -> 
+                                criteriaBuilder.equal(root.get("company").get("id"), currentUser.getCompany().getId());
+
+                        // Combine with existing spec if any
+                        if (spec != null) {
+                            finalSpec = spec.and(hrSpec);
+                        } else {
+                            finalSpec = hrSpec;
+                        }
+                    } else {
+                        // HR chưa có company, trả về empty result
+                        finalSpec = (root, query, criteriaBuilder) -> criteriaBuilder.disjunction();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // If error getting current user, continue with original spec
+        }
+
+        Page<Job> pageUser = this.jobRepository.findAll(finalSpec, pageable);
 
         // Tự động cập nhật trạng thái active cho tất cả job trong kết quả
         pageUser.getContent().forEach(this::updateJobActiveStatus);
@@ -230,13 +304,13 @@ public class JobService {
 
     public ResultPaginationDTO userSearchAndFilter(
             String keyword, String location, String skills,
-            Double minSalary, Double maxSalary, String level, String companyName, Pageable pageable) {
+            Double minSalary, Double maxSalary, String level, String companyName, String categories, Pageable pageable) {
 
         try {
             System.out.println("Search parameters - keyword: " + keyword +
                     ", location: " + location + ", skills: " + skills +
                     ", minSalary: " + minSalary + ", maxSalary: " + maxSalary + ", level: " + level +
-                    ", companyName: " + companyName);
+                    ", companyName: " + companyName + ", categories: " + categories);
 
             // Xây dựng specification cho search và filter
             Specification<Job> spec = (root, query, criteriaBuilder) -> {
@@ -289,6 +363,14 @@ public class JobService {
                     ));
                 }
 
+                // Filter by categories
+                if (categories != null && !categories.trim().isEmpty()) {
+                    String[] categoryArray = categories.split(",");
+                    System.out.println("Adding categories filter: " + Arrays.toString(categoryArray));
+                    // Filter by category name or slug
+                    predicates.add(root.join("category").get("name").in(Arrays.asList(categoryArray)));
+                }
+
                 // Debug: In ra tất cả predicates
                 System.out.println("Total predicates: " + predicates.size());
                 for (int i = 0; i < predicates.size(); i++) {
@@ -311,7 +393,7 @@ public class JobService {
     public ResultPaginationDTO userSearchAndFilter(
             String keyword, String location, String skills,
             Double minSalary, Double maxSalary, String level, Pageable pageable) {
-        return userSearchAndFilter(keyword, location, skills, minSalary, maxSalary, level, null, pageable);
+        return userSearchAndFilter(keyword, location, skills, minSalary, maxSalary, level, null, null, pageable);
     }
     public ResultPaginationDTO fetchJobsByCompany(long companyId, Pageable pageable) {
         // Tạo specification để filter theo company ID
@@ -441,5 +523,16 @@ public class JobService {
         };
 
         return this.jobRepository.count(spec);
+    }
+
+    /**
+     * Check if user is HR or HR_PENDING (case-insensitive)
+     */
+    private boolean isHrLike(User user) {
+        if (user == null || user.getRole() == null || user.getRole().getName() == null) {
+            return false;
+        }
+        String roleName = user.getRole().getName();
+        return ROLE_HR.equalsIgnoreCase(roleName) || ROLE_HR_PENDING.equalsIgnoreCase(roleName);
     }
 }
