@@ -89,17 +89,6 @@ public class JobController {
         }
     }
 
-    @GetMapping("/jobs/{id}")
-    @ApiMessage("Get a job by id")
-    public ResponseEntity<Job> getJob(@PathVariable("id") long id) throws IdInvalidException {
-        Optional<Job> currentJob = this.jobService.fetchJobById(id);
-        if (!currentJob.isPresent()) {
-            throw new IdInvalidException("Job not found");
-        }
-
-        return ResponseEntity.ok().body(currentJob.get());
-    }
-
     @GetMapping("/jobs")
     @ApiMessage("Get job with pagination")
     public ResponseEntity<ResultPaginationDTO> getAllJob(
@@ -109,6 +98,7 @@ public class JobController {
         return ResponseEntity.ok().body(this.jobService.fetchAll(spec, pageable));
     }
 
+    // Các endpoint cụ thể phải đặt TRƯỚC endpoint generic /jobs/{id} để tránh conflict
     @GetMapping("/jobs/user-search")
     @ApiMessage("User search and filter jobs")
     public ResponseEntity<ResultPaginationDTO> userSearchAndFilterJobs(
@@ -125,6 +115,28 @@ public class JobController {
         return ResponseEntity.ok().body(this.jobService.userSearchAndFilter(
                 keyword, location, skills, minSalary, maxSalary, level, companyName, categories, pageable));
     }
+
+    @GetMapping("/jobs/matching")
+    @ApiMessage("Get matching jobs for current user based on skills")
+    public ResponseEntity<ResultPaginationDTO> getMatchingJobs(Pageable pageable) {
+        return ResponseEntity.ok().body(this.jobService.fetchMatchingJobsForCurrentUser(pageable));
+    }
+
+    @GetMapping("/jobs/matching/count")
+    @ApiMessage("Get count of matching jobs for current user")
+    public ResponseEntity<Long> getMatchingJobsCount() {
+        return ResponseEntity.ok().body(this.jobService.countMatchingJobsForCurrentUser());
+    }
+
+    @GetMapping("/jobs/company/{companyId}")
+    @ApiMessage("Get jobs by company ID")
+    public ResponseEntity<ResultPaginationDTO> getJobsByCompany(
+            @PathVariable("companyId") long companyId,
+            Pageable pageable) {
+
+        return ResponseEntity.ok().body(this.jobService.fetchJobsByCompany(companyId, pageable));
+    }
+
     @GetMapping("/jobs/resumes/{job_id}")
     @ApiMessage("Get all resumes of Job")
     public ResponseEntity<Map<String, Object>> getResumesByJob(@PathVariable("job_id") Long id) throws IdInvalidException {
@@ -137,26 +149,17 @@ public class JobController {
         body.put("count", resumes != null ? resumes.size() : 0);
         body.put("resumes", resumes);
         return ResponseEntity.ok().body(body);
-    }    
-
-    @GetMapping("/jobs/company/{companyId}")
-    @ApiMessage("Get jobs by company ID")
-    public ResponseEntity<ResultPaginationDTO> getJobsByCompany(
-            @PathVariable("companyId") long companyId,
-            Pageable pageable) {
-
-        return ResponseEntity.ok().body(this.jobService.fetchJobsByCompany(companyId, pageable));
     }
 
-    @GetMapping("/jobs/matching")
-    @ApiMessage("Get matching jobs for current user based on skills")
-    public ResponseEntity<ResultPaginationDTO> getMatchingJobs(Pageable pageable) {
-        return ResponseEntity.ok().body(this.jobService.fetchMatchingJobsForCurrentUser(pageable));
-    }
+    // Endpoint generic phải đặt CUỐI CÙNG để tránh match các path cụ thể
+    @GetMapping("/jobs/{id}")
+    @ApiMessage("Get a job by id")
+    public ResponseEntity<Job> getJob(@PathVariable("id") long id) throws IdInvalidException {
+        Optional<Job> currentJob = this.jobService.fetchJobById(id);
+        if (!currentJob.isPresent()) {
+            throw new IdInvalidException("Job not found");
+        }
 
-    @GetMapping("/jobs/matching/count")
-    @ApiMessage("Get count of matching jobs for current user")
-    public ResponseEntity<Long> getMatchingJobsCount() {
-        return ResponseEntity.ok().body(this.jobService.countMatchingJobsForCurrentUser());
+        return ResponseEntity.ok().body(currentJob.get());
     }
 }

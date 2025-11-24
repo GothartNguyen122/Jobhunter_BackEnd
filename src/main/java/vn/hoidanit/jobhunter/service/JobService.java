@@ -20,10 +20,12 @@ import vn.hoidanit.jobhunter.domain.response.job.ResCreateJobDTO;
 import vn.hoidanit.jobhunter.domain.response.job.ResUpdateJobDTO;
 import vn.hoidanit.jobhunter.repository.CompanyRepository;
 import vn.hoidanit.jobhunter.repository.JobRepository;
+import vn.hoidanit.jobhunter.repository.JobAlertRepository;
 import vn.hoidanit.jobhunter.repository.ResumeRepository;
 import vn.hoidanit.jobhunter.repository.SkillRepository;
 import vn.hoidanit.jobhunter.repository.UserRepository;
 import vn.hoidanit.jobhunter.domain.User;
+import vn.hoidanit.jobhunter.domain.JobAlert;
 import vn.hoidanit.jobhunter.util.SecurityUtil;
 import vn.hoidanit.jobhunter.util.constant.LevelEnum;
 import vn.hoidanit.jobhunter.util.error.IdInvalidException;
@@ -41,19 +43,22 @@ public class JobService {
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
     private final JobAlertService jobAlertService;
+    private final JobAlertRepository jobAlertRepository;
 
     public JobService(JobRepository jobRepository,
             SkillRepository skillRepository,
             CompanyRepository companyRepository,
             ResumeRepository resumeRepository,
             UserRepository userRepository,
-            JobAlertService jobAlertService) {
+            JobAlertService jobAlertService,
+            JobAlertRepository jobAlertRepository) {
         this.jobRepository = jobRepository;
         this.skillRepository = skillRepository;
         this.companyRepository = companyRepository;
         this.resumeRepository = resumeRepository;
         this.userRepository = userRepository;
         this.jobAlertService = jobAlertService;
+        this.jobAlertRepository = jobAlertRepository;
     }
 
     public Optional<Job> fetchJobById(long id) {
@@ -523,6 +528,182 @@ public class JobService {
         };
 
         return this.jobRepository.count(spec);
+    }
+
+    /**
+     * Tìm công việc phù hợp với job alert criteria của user hiện tại
+     * Tối ưu: Sử dụng database pagination thay vì load tất cả vào memory
+     */
+    public ResultPaginationDTO fetchMatchingJobsByJobAlert(Pageable pageable) {
+        String email = SecurityUtil.getCurrentUserLogin().orElse("");
+        if (email.isEmpty()) {
+            return createEmptyResult(pageable);
+        }
+
+        User user = this.userRepository.findByEmail(email);
+        if (user == null) {
+            return createEmptyResult(pageable);
+        }
+
+        // Tối ưu: Query trực tiếp active alert với skills (tránh query 2 lần)
+        JobAlert activeAlert = this.jobAlertRepository.findActiveByUserWithSkills(user).orElse(null);
+
+        // Base specification cho active jobs
+        Specification<Job> baseSpec = (root, query, criteriaBuilder) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(criteriaBuilder.equal(root.get("active"), true));
+            predicates.add(
+                criteriaBuilder.or(
+                    criteriaBuilder.isNull(root.get("endDate")),
+                    criteriaBuilder.greaterThan(root.get("endDate"), java.time.Instant.now())
+                )
+            );
+            query.distinct(true);
+            return criteriaBuilder.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        // Tối ưu: Nếu không có alert hoặc alert không có criteria, dùng pagination trực tiếp
+        if (activeAlert == null || !this.jobAlertService.hasAnyCriteria(activeAlert)) {
+            Page<Job> pageJobs = this.jobRepository.findAll(baseSpec, pageable);
+            pageJobs.getContent().forEach(this::updateJobActiveStatus);
+
+            ResultPaginationDTO rs = new ResultPaginationDTO();
+            ResultPaginationDTO.Meta mt = new ResultPaginationDTO.Meta();
+            mt.setPage(pageable.getPageNumber() + 1);
+            mt.setPageSize(pageable.getPageSize());
+            mt.setPages(pageJobs.getTotalPages());
+            mt.setTotal(pageJobs.getTotalElements());
+            rs.setMeta(mt);
+            rs.setResult(pageJobs.getContent());
+            return rs;
+        }
+
+        // Có alert với criteria - tối ưu bằng cách thêm một số filter vào query trước
+        Specification<Job> enhancedSpec = buildJobAlertSpecification(baseSpec, activeAlert);
+        
+        // Tối ưu: Load một batch lớn hơn để filter (ví dụ: 5x page size)
+        // Sau đó filter và paginate trong memory cho batch nhỏ này
+        int batchSize = Math.max(pageable.getPageSize() * 5, 100); // Tối thiểu 100, tối đa 5x page size
+        Pageable batchPageable = org.springframework.data.domain.PageRequest.of(0, batchSize, pageable.getSort());
+        
+        Page<Job> batchJobs = this.jobRepository.findAll(enhancedSpec, batchPageable);
+        List<Job> matchingJobs = batchJobs.getContent().stream()
+                .filter(job -> this.jobAlertService.isJobMatchingAlert(job, activeAlert))
+                .collect(Collectors.toList());
+
+        // Nếu batch không đủ, cần load thêm (nhưng giới hạn để tránh OOM)
+        int maxBatches = 10; // Giới hạn tối đa 10 batches
+        int currentBatch = 1;
+        while (matchingJobs.size() < pageable.getPageSize() && 
+               currentBatch < maxBatches && 
+               (currentBatch * batchSize) < batchJobs.getTotalElements()) {
+            
+            Pageable nextBatchPageable = org.springframework.data.domain.PageRequest.of(
+                currentBatch, batchSize, pageable.getSort());
+            Page<Job> nextBatch = this.jobRepository.findAll(enhancedSpec, nextBatchPageable);
+            
+            List<Job> nextMatching = nextBatch.getContent().stream()
+                    .filter(job -> this.jobAlertService.isJobMatchingAlert(job, activeAlert))
+                    .collect(Collectors.toList());
+            matchingJobs.addAll(nextMatching);
+            
+            if (nextBatch.getContent().isEmpty()) break;
+            currentBatch++;
+        }
+
+        // Manual pagination trên kết quả đã filter
+        int total = matchingJobs.size();
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), total);
+        List<Job> pagedJobs = start < total ? matchingJobs.subList(start, end) : Collections.emptyList();
+
+        // Tối ưu: Chỉ update active status cho jobs trong page
+        pagedJobs.forEach(this::updateJobActiveStatus);
+
+        ResultPaginationDTO rs = new ResultPaginationDTO();
+        ResultPaginationDTO.Meta mt = new ResultPaginationDTO.Meta();
+        mt.setPage(pageable.getPageNumber() + 1);
+        mt.setPageSize(pageable.getPageSize());
+        // Note: Total có thể không chính xác nếu chưa load hết, nhưng đủ cho pagination
+        mt.setTotal(total);
+        mt.setPages((int) Math.ceil((double) total / pageable.getPageSize()));
+
+        rs.setMeta(mt);
+        rs.setResult(pagedJobs);
+
+        return rs;
+    }
+
+    /**
+     * Build specification với một số filter từ job alert (tối ưu database query)
+     */
+    private Specification<Job> buildJobAlertSpecification(Specification<Job> baseSpec, JobAlert alert) {
+        Specification<Job> alertSpec = baseSpec;
+        
+        // Thêm filter category nếu có (dễ filter trong database)
+        if (alert.getCategory() != null) {
+            Specification<Job> categorySpec = (root, query, criteriaBuilder) -> 
+                criteriaBuilder.equal(root.get("category").get("id"), alert.getCategory().getId());
+            alertSpec = alertSpec.and(categorySpec);
+        }
+        
+        // Thêm filter skills nếu có (ít nhất một skill match)
+        if (alert.getSkills() != null && !alert.getSkills().isEmpty()) {
+            Specification<Job> skillsSpec = (root, query, criteriaBuilder) -> {
+                jakarta.persistence.criteria.Join<Job, Skill> skillsJoin = root.join("skills");
+                List<Long> skillIds = alert.getSkills().stream()
+                        .map(Skill::getId)
+                        .collect(Collectors.toList());
+                return skillsJoin.in(skillIds);
+            };
+            alertSpec = alertSpec.and(skillsSpec);
+        }
+        
+        // Thêm filter level nếu có
+        if (alert.getExperience() != null && !alert.getExperience().isBlank()) {
+            try {
+                LevelEnum level = LevelEnum.valueOf(alert.getExperience().trim().toUpperCase());
+                Specification<Job> levelSpec = (root, query, criteriaBuilder) -> 
+                    criteriaBuilder.equal(root.get("level"), level);
+                alertSpec = alertSpec.and(levelSpec);
+            } catch (IllegalArgumentException e) {
+                // Invalid level, skip
+            }
+        }
+        
+        // Thêm filter salary range nếu có
+        if (alert.getMinSalary() != null || alert.getMaxSalary() != null) {
+            Specification<Job> salarySpec = (root, query, criteriaBuilder) -> {
+                List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+                if (alert.getMinSalary() != null) {
+                    predicates.add(criteriaBuilder.greaterThanOrEqualTo(
+                        root.get("salary"), alert.getMinSalary()));
+                }
+                if (alert.getMaxSalary() != null) {
+                    predicates.add(criteriaBuilder.lessThanOrEqualTo(
+                        root.get("salary"), alert.getMaxSalary()));
+                }
+                return criteriaBuilder.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+            };
+            alertSpec = alertSpec.and(salarySpec);
+        }
+        
+        return alertSpec;
+    }
+
+    /**
+     * Create empty ResultPaginationDTO
+     */
+    private ResultPaginationDTO createEmptyResult(Pageable pageable) {
+        ResultPaginationDTO rs = new ResultPaginationDTO();
+        ResultPaginationDTO.Meta mt = new ResultPaginationDTO.Meta();
+        mt.setPage(1);
+        mt.setPageSize(pageable.getPageSize());
+        mt.setPages(0);
+        mt.setTotal(0);
+        rs.setMeta(mt);
+        rs.setResult(Collections.emptyList());
+        return rs;
     }
 
     /**

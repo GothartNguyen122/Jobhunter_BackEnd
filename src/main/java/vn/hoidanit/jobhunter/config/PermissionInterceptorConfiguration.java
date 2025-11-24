@@ -2,6 +2,7 @@ package vn.hoidanit.jobhunter.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -13,14 +14,18 @@ public class PermissionInterceptorConfiguration implements WebMvcConfigurer {
     }
 
     @Override
-    public void addInterceptors(InterceptorRegistry registry) {
+    public void addInterceptors(@NonNull InterceptorRegistry registry) {
         String[] whiteList = {
                 "/", "/api/v1/auth/**", "/storage/**",
                 "/api/v1/companies/**", "/api/v1/jobs/**", "/api/v1/skills/**", "/api/v1/files",
                 "/api/v1/categories/**",
                 "/api/v1/resumes/**",
                 "/api/v1/job-cluster/**",
-                "/api/v1/users/**"
+                "/api/v1/users/**",
+                "/api/v1/job-alerts/**",
+                "/api/v1/user-cvs/**",
+                "/api/v1/feedback/**",
+                "/api/v1/email/**"
         };
         registry.addInterceptor(getPermissionInterceptor())
                 .excludePathPatterns(whiteList);

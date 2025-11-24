@@ -15,6 +15,12 @@ public class ResLoginDTO {
 
     private UserLogin user;
 
+    /**
+     * Metadata để frontend biết action: "login" (user đã tồn tại) hoặc "register" (user mới)
+     * Giúp hiển thị thông báo phù hợp
+     */
+    private String action; // "login" hoặc "register"
+
     @Getter
     @Setter
     @AllArgsConstructor

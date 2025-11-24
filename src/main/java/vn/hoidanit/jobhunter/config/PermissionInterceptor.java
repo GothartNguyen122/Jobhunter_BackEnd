@@ -43,31 +43,31 @@ public class PermissionInterceptor implements HandlerInterceptor {
         }
 
         // Check if user is authenticated
-        String email = SecurityUtil.getCurrentUserLogin().isPresent() == true
-                ? SecurityUtil.getCurrentUserLogin().get()
-                : "";
+        String email = SecurityUtil.getCurrentUserLogin().orElse("");
         
-        // Allow authenticated users to access matching jobs endpoints without specific permission
-        if (email != null && !email.isEmpty() && isAuthenticatedUserEndpoint(path, httpMethod)) {
+        // Allow authenticated users to access endpoints without specific permission
+        if (!email.isEmpty() && isAuthenticatedUserEndpoint(path, httpMethod)) {
             return true;
         }
 
-        // check permission for other endpoints
-        if (email != null && !email.isEmpty()) {
+        // Check permission for other endpoints (requires specific permission)
+        if (!email.isEmpty()) {
             User user = this.userService.handleGetUserByUsername(email);
-            if (user != null) {
-                Role role = user.getRole();
-                if (role != null) {
-                    List<Permission> permissions = role.getPermissions();
-                    boolean isAllow = permissions.stream().anyMatch(item -> item.getApiPath().equals(path)
-                            && item.getMethod().equals(httpMethod));
+            if (user == null) {
+                throw new PermissionException("Bạn không có quyền truy cập endpoint này.");
+            }
 
-                    if (isAllow == false) {
-                        throw new PermissionException("Bạn không có quyền truy cập endpoint này.");
-                    }
-                } else {
-                    throw new PermissionException("Bạn không có quyền truy cập endpoint này.");
-                }
+            Role role = user.getRole();
+            if (role == null) {
+                throw new PermissionException("Bạn không có quyền truy cập endpoint này.");
+            }
+
+            List<Permission> permissions = role.getPermissions();
+            boolean hasPermission = permissions.stream()
+                    .anyMatch(item -> item.getApiPath().equals(path) && item.getMethod().equals(httpMethod));
+
+            if (!hasPermission) {
+                throw new PermissionException("Bạn không có quyền truy cập endpoint này.");
             }
         }
 
@@ -100,16 +100,30 @@ public class PermissionInterceptor implements HandlerInterceptor {
         if ("GET".equalsIgnoreCase(method)) {
             return "/api/v1/jobs/matching".equals(path)
                     || "/api/v1/jobs/matching/count".equals(path)
+                    || "/api/v1/job-alerts/matching-jobs".equals(path)
                     || "/api/v1/favorites/jobs".equals(path)
                     || "/api/v1/favorites/companies".equals(path)
                     || "/api/v1/favorites/jobs/check/{jobId}".equals(path)
-                    || "/api/v1/favorites/companies/check/{companyId}".equals(path);
+                    || "/api/v1/favorites/companies/check/{companyId}".equals(path)
+                    || "/api/v1/job-alerts/my".equals(path)
+                    || "/api/v1/user-cvs/my".equals(path)
+                    || (path.startsWith("/api/v1/user-cvs/") && path.matches("/api/v1/user-cvs/\\d+"));
         } else if ("POST".equalsIgnoreCase(method)) {
             return "/api/v1/favorites/jobs/{jobId}".equals(path)
-                    || "/api/v1/favorites/companies/{companyId}".equals(path);
+                    || "/api/v1/favorites/companies/{companyId}".equals(path)
+                    || "/api/v1/job-alerts".equals(path)
+                    || "/api/v1/user-cvs".equals(path)
+                    || "/api/v1/feedback".equals(path)
+                    || (path.startsWith("/api/v1/job-alerts/") && path.endsWith("/toggle"))
+                    || (path.startsWith("/api/v1/user-cvs/") && path.endsWith("/set-default"));
+        } else if ("PUT".equalsIgnoreCase(method)) {
+            return (path.startsWith("/api/v1/job-alerts/") && path.matches("/api/v1/job-alerts/\\d+"))
+                    || (path.startsWith("/api/v1/user-cvs/") && path.matches("/api/v1/user-cvs/\\d+"));
         } else if ("DELETE".equalsIgnoreCase(method)) {
             return "/api/v1/favorites/jobs/{jobId}".equals(path)
-                    || "/api/v1/favorites/companies/{companyId}".equals(path);
+                    || "/api/v1/favorites/companies/{companyId}".equals(path)
+                    || (path.startsWith("/api/v1/job-alerts/") && path.matches("/api/v1/job-alerts/\\d+"))
+                    || (path.startsWith("/api/v1/user-cvs/") && path.matches("/api/v1/user-cvs/\\d+"));
         }
 
         return false;

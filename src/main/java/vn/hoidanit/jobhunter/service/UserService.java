@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import vn.hoidanit.jobhunter.domain.Company;
 import vn.hoidanit.jobhunter.domain.Role;
@@ -19,23 +20,51 @@ import vn.hoidanit.jobhunter.domain.response.ResultPaginationDTO;
 import vn.hoidanit.jobhunter.repository.UserRepository;
 import vn.hoidanit.jobhunter.domain.Skill;
 import vn.hoidanit.jobhunter.repository.SkillRepository;
+import vn.hoidanit.jobhunter.repository.JobAlertRepository;
+import vn.hoidanit.jobhunter.domain.JobAlert;
+import vn.hoidanit.jobhunter.repository.FavoriteRepository;
+import vn.hoidanit.jobhunter.domain.Favorite;
+import vn.hoidanit.jobhunter.repository.FeedbackRepository;
+import vn.hoidanit.jobhunter.domain.Feedback;
+import vn.hoidanit.jobhunter.repository.UserCvRepository;
+import vn.hoidanit.jobhunter.domain.UserCv;
+import vn.hoidanit.jobhunter.repository.ResumeRepository;
+import vn.hoidanit.jobhunter.domain.Resume;
+import vn.hoidanit.jobhunter.util.error.IdInvalidException;
 
 @Service
 public class UserService {
+    
+    private static final String ROLE_SUPER_ADMIN = "SUPER_ADMIN";
 
     private final UserRepository userRepository;
     private final CompanyService companyService;
     private final RoleService roleService;
     private final SkillRepository skillRepository;
+    private final JobAlertRepository jobAlertRepository;
+    private final FavoriteRepository favoriteRepository;
+    private final FeedbackRepository feedbackRepository;
+    private final UserCvRepository userCvRepository;
+    private final ResumeRepository resumeRepository;
 
     public UserService(UserRepository userRepository,
             CompanyService companyService,
             RoleService roleService,
-            SkillRepository skillRepository) {
+            SkillRepository skillRepository,
+            JobAlertRepository jobAlertRepository,
+            FavoriteRepository favoriteRepository,
+            FeedbackRepository feedbackRepository,
+            UserCvRepository userCvRepository,
+            ResumeRepository resumeRepository) {
         this.userRepository = userRepository;
         this.companyService = companyService;
         this.roleService = roleService;
         this.skillRepository = skillRepository;
+        this.jobAlertRepository = jobAlertRepository;
+        this.favoriteRepository = favoriteRepository;
+        this.feedbackRepository = feedbackRepository;
+        this.userCvRepository = userCvRepository;
+        this.resumeRepository = resumeRepository;
     }
 
     public User handleCreateUser(User user) {
@@ -54,8 +83,69 @@ public class UserService {
         return this.userRepository.save(user);
     }
 
-    public void handleDeleteUser(long id) {
+    /**
+     * Xóa user và tất cả dữ liệu liên quan
+     * Business rules:
+     * - Không cho phép xóa SUPER_ADMIN
+     * - Xóa theo thứ tự để tránh foreign key constraint
+     * 
+     * @param id User ID cần xóa
+     * @throws IdInvalidException Nếu user không tồn tại hoặc là SUPER_ADMIN
+     */
+    @Transactional
+    public void handleDeleteUser(long id) throws IdInvalidException {
+        // Tìm user trước
+        Optional<User> userOptional = this.userRepository.findById(id);
+        if (userOptional.isEmpty()) {
+            throw new IdInvalidException("User với id = " + id + " không tồn tại");
+        }
+
+        User user = userOptional.get();
+
+        // Business rule: Không cho phép xóa SUPER_ADMIN
+        if (user.getRole() != null && ROLE_SUPER_ADMIN.equalsIgnoreCase(user.getRole().getName())) {
+            throw new IdInvalidException("Không thể xóa tài khoản SUPER_ADMIN");
+        }
+
+        // Xóa tất cả các entity liên quan trước (để tránh foreign key constraint)
+        // Thứ tự xóa quan trọng: xóa từ child đến parent
+        
+        // 1. Xóa JobAlert (cần clear skills trước vì có join table)
+        deleteJobAlertsByUser(user);
+        
+        // 2-5. Xóa các entity khác (tối ưu: dùng helper method chung)
+        deleteUserRelatedEntities(user, this.favoriteRepository::findByUser, this.favoriteRepository::deleteAll);
+        deleteUserRelatedEntities(user, this.feedbackRepository::findByUser, this.feedbackRepository::deleteAll);
+        deleteUserRelatedEntities(user, this.userCvRepository::findByUser, this.userCvRepository::deleteAll);
+        deleteUserRelatedEntities(user, this.resumeRepository::findByUser, this.resumeRepository::deleteAll);
+
+        // Cuối cùng mới xóa user
         this.userRepository.deleteById(id);
+    }
+
+    /**
+     * Xóa JobAlert của user (cần clear skills trước vì có join table)
+     */
+    private void deleteJobAlertsByUser(User user) {
+        List<JobAlert> jobAlerts = this.jobAlertRepository.findByUser(user);
+        if (jobAlerts != null && !jobAlerts.isEmpty()) {
+            jobAlerts.forEach(alert -> alert.getSkills().clear());
+            this.jobAlertRepository.saveAll(jobAlerts);
+            this.jobAlertRepository.deleteAll(jobAlerts);
+        }
+    }
+
+    /**
+     * Helper method tối ưu: xóa entities theo pattern chung (findByUser -> deleteAll)
+     */
+    @SuppressWarnings("unchecked")
+    private <T> void deleteUserRelatedEntities(User user, 
+                                               java.util.function.Function<User, List<T>> finder, 
+                                               java.util.function.Consumer<List<T>> deleter) {
+        List<T> entities = finder.apply(user);
+        if (entities != null && !entities.isEmpty()) {
+            deleter.accept(entities);
+        }
     }
 
     public User fetchUserById(long id) {

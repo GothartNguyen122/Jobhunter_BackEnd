@@ -19,5 +19,16 @@ public interface JobAlertRepository extends JpaRepository<JobAlert, Long> {
     @EntityGraph(attributePaths = { "skills", "user", "category" })
     @Query("SELECT DISTINCT ja FROM JobAlert ja WHERE ja.active = true")
     List<JobAlert> findActiveAlertsWithSkills();
+
+    @EntityGraph(attributePaths = { "skills", "user", "category" })
+    @Query("SELECT DISTINCT ja FROM JobAlert ja WHERE ja.id = :id")
+    java.util.Optional<JobAlert> findByIdWithSkills(@org.springframework.data.repository.query.Param("id") Long id);
+
+    /**
+     * Find active job alert for a user with skills loaded
+     */
+    @EntityGraph(attributePaths = { "skills", "user", "category" })
+    @Query("SELECT DISTINCT ja FROM JobAlert ja WHERE ja.user = :user AND ja.active = true")
+    java.util.Optional<JobAlert> findActiveByUserWithSkills(@org.springframework.data.repository.query.Param("user") User user);
 }
 

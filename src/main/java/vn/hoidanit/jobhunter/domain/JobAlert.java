@@ -45,7 +45,13 @@ public class JobAlert {
     private String experience;
 
     @Column(name = "desired_salary")
-    private Integer desiredSalary;
+    private Integer desiredSalary; // Deprecated, use minSalary and maxSalary instead
+
+    @Column(name = "min_salary")
+    private Integer minSalary;
+
+    @Column(name = "max_salary")
+    private Integer maxSalary;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JsonIgnoreProperties(value = { "jobAlerts", "jobs", "users" })

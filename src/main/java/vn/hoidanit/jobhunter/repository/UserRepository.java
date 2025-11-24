@@ -20,6 +20,7 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
 
     User findByRefreshTokenAndEmail(String token, String email);
 
+    @EntityGraph(attributePaths = { "role" })
     List<User> findByCompany(Company company);
 
     @Query("SELECT DISTINCT u FROM User u LEFT JOIN FETCH u.skills WHERE u.email IS NOT NULL AND u.email != ''")

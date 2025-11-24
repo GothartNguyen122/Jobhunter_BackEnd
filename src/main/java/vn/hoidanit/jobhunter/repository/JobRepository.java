@@ -27,6 +27,13 @@ public interface JobRepository extends JpaRepository<Job, Long>,
         Optional<Job> findByIdWithSkills(@Param("id") Long id);
 
         /**
+         * Fetch multiple jobs with skills eagerly to avoid N+1 queries
+         */
+        @EntityGraph(attributePaths = { "skills", "company", "category" })
+        @Query("SELECT DISTINCT j FROM Job j WHERE j.id IN :ids")
+        List<Job> findByIdsWithSkills(@Param("ids") List<Long> ids);
+
+        /**
          * Fetch jobs with skills and company eagerly to avoid N+1 queries
          */
         @EntityGraph(attributePaths = { "skills", "company", "category" })
@@ -41,4 +48,12 @@ public interface JobRepository extends JpaRepository<Job, Long>,
         @EntityGraph(attributePaths = { "skills", "company", "category" })
         @NonNull
         Page<Job> findAll(@NonNull Specification<Job> spec, @NonNull Pageable pageable);
+
+        /**
+         * Fetch all jobs with skills and company eagerly using Specification (no pagination)
+         * Uses EntityGraph to eagerly load relationships
+         */
+        @EntityGraph(attributePaths = { "skills", "company", "category" })
+        @NonNull
+        List<Job> findAll(@NonNull Specification<Job> spec);
 }
