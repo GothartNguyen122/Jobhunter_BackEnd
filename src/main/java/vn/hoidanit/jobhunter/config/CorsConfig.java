@@ -18,7 +18,7 @@ public class CorsConfig {
         // cho phép các URL nào có thể kết nối tới backend
         configuration.setAllowedOrigins(
                 Arrays.asList("http://localhost:3000", "http://localhost:8000", "http://localhost:4173",
-                        "http://localhost:5173", "http://localhost:3001"));
+                        "http://localhost:5173", "http://localhost:3001","https://jobhunter-front-end-j5t3.vercel.app/"));
 
         // các method nào đc kết nối
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
