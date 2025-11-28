@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM gradle:8.7-jdk17 AS build
+FROM --platform=linux/amd64 gradle:8.7-jdk17 AS build
 COPY --chown=gradle:gradle . /hoidanit/jobhunter
 WORKDIR /hoidanit/jobhunter
 
@@ -7,7 +7,7 @@ WORKDIR /hoidanit/jobhunter
 RUN gradle clean build -x test --no-daemon
 
 # Stage 2: Run the application
-FROM eclipse-temurin:17-jre
+FROM --platform=linux/amd64 eclipse-temurin:17-jre
 EXPOSE 8080
 COPY --from=build /hoidanit/jobhunter/build/libs/*.jar /hoidanit/spring-boot-job-hunter.jar
 ENTRYPOINT ["java", "-jar", "/hoidanit/spring-boot-job-hunter.jar"]
