@@ -45,7 +45,6 @@ jobs:
         with:
           images: |
             ${{ env.IMAGE_NAME_GHCR }}
-            jobhunter-backend
           tags: |
             type=ref,event=branch
             type=ref,event=pr
