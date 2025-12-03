@@ -1,5 +1,18 @@
 name: Deploy Servers
 
+# ============================================
+# REQUIRED GITHUB SECRETS (Settings → Secrets and variables → Actions):
+# ============================================
+# 1. VPS_SSH_PRIVATE_KEY  - Private SSH key để kết nối VPS (toàn bộ nội dung, bao gồm BEGIN và END lines)
+# 2. VPS_HOST             - IP address hoặc domain của VPS (ví dụ: 192.168.1.100 hoặc vps.example.com)
+# 3. VPS_USER             - Username để SSH vào VPS (ví dụ: ubuntu, root, deploy)
+# 4. GHCR_TOKEN           - GitHub Personal Access Token với quyền read:packages (OPTIONAL - nếu không có sẽ dùng GITHUB_TOKEN)
+# ============================================
+# Docker Configuration:
+# - Image: ghcr.io/${{ github.repository_owner }}/jobhunter-backend:latest
+# - GITHUB_TOKEN được tự động cung cấp bởi GitHub Actions
+# ============================================
+
 on:
   push:
     branches:
@@ -16,7 +29,8 @@ on:
 
 env:
   REGISTRY_GHCR: ghcr.io
-  IMAGE_NAME_GHCR: ghcr.io/${{ github.repository_owner }}/jobhunter-backend
+  # GHCR image name MUST be lowercase → hardcode owner ở dạng lowercase
+  IMAGE_NAME_GHCR: ghcr.io/gothartnguyen122/jobhunter-backend
 
 jobs:
   build-and-push:
@@ -80,4 +94,37 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  deploy-pull:
+    runs-on: ubuntu-22.04
+    needs: build-and-push
+    name: Pull image on VPS (no auto start)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+
+      - name: Add VPS to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Login to GitHub Container Registry on VPS
+        run: |
+          TOKEN="${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}"
+          echo "$TOKEN" | ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "docker login ${{ env.REGISTRY_GHCR }} -u ${{ github.actor }} --password-stdin"
+
+      - name: Pull Docker image on VPS (only update image, do NOT start)
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "docker pull ${{ env.IMAGE_NAME_GHCR }}:latest"
+
+      - name: Summary
+        run: |
+          echo "### ✅ Image pulled on VPS (no container restart)" >> $GITHUB_STEP_SUMMARY
+          echo "- Host: \`${{ secrets.VPS_HOST }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`${{ env.IMAGE_NAME_GHCR }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Use \`docker-compose pull\` and \`docker-compose up -d\` on VPS to update containers" >> $GITHUB_STEP_SUMMARY
 
