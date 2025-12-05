@@ -27,6 +27,7 @@ public class ResFetchResumeDTO {
     private String companyName;
     private UserResume user;
     private JobResume job;
+    private Integer matchingScore; // Độ phù hợp CV với Job (0-100)
 
     @Getter
     @Setter

@@ -349,6 +349,7 @@ public class AuthController {
     @ApiMessage("Register with Google Authorization Code")
     public ResponseEntity<ResLoginDTO> googleRegister(@RequestParam("code") String code,
             @RequestParam("redirectUri") String redirectUri,
+            @RequestParam(name = "accountType", required = false) String accountType,
             @Value("${spring.security.oauth2.client.registration.google.client-id}") String clientId,
             @Value("${spring.security.oauth2.client.registration.google.client-secret}") String clientSecret) {
         try {
@@ -416,6 +417,13 @@ public class AuthController {
             newUser.setPassword("OAUTH2_USER"); // Default password for OAuth users
             newUser.setAge(25); // Default age
 
+            String normalizedAccountType = Optional.ofNullable(accountType).orElse("CANDIDATE");
+            if ("HR".equalsIgnoreCase(normalizedAccountType)) {
+                newUser.setRole(this.getRoleOrThrow(ROLE_HR_PENDING));
+            } else {
+                newUser.setRole(this.getRoleOrThrow(ROLE_NORMAL_USER));
+            }
+
             User createdUser = this.userService.handleCreateUser(newUser);
 
             // 5) Issue JWT and response
@@ -476,7 +484,8 @@ public class AuthController {
 
     @PostMapping("/auth/facebook/register")
     @ApiMessage("Register with Facebook access token")
-    public ResponseEntity<ResLoginDTO> facebookRegister(@RequestParam("accessToken") String accessToken) {
+    public ResponseEntity<ResLoginDTO> facebookRegister(@RequestParam("accessToken") String accessToken,
+            @RequestParam(name = "accountType", required = false) String accountType) {
         try {
             // Verify token and fetch user info
             String url = "https://graph.facebook.com/me?fields=id,name,email&access_token=" + accessToken;
@@ -513,6 +522,14 @@ public class AuthController {
             newUser.setName(name);
             newUser.setPassword("OAUTH2_USER");
             newUser.setAge(25);
+
+            String normalizedAccountType = Optional.ofNullable(accountType).orElse("CANDIDATE");
+            if ("HR".equalsIgnoreCase(normalizedAccountType)) {
+                newUser.setRole(this.getRoleOrThrow(ROLE_HR_PENDING));
+            } else {
+                newUser.setRole(this.getRoleOrThrow(ROLE_NORMAL_USER));
+            }
+
             User created = this.userService.handleCreateUser(newUser);
 
             ResLoginDTO res = new ResLoginDTO();

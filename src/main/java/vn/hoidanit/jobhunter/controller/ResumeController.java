@@ -157,52 +157,31 @@ public class ResumeController {
     }
 
     @DeleteMapping("/resumes/{id}")
-    @ApiMessage("Delete a resume by id")
+    @ApiMessage("Xóa resume thành công")
     public ResponseEntity<Void> delete(@PathVariable("id") long id) throws IdInvalidException {
-        System.out.println("=== DELETE RESUME DEBUG ===");
-        System.out.println("Resume ID: " + id);
-
         Optional<Resume> reqResumeOptional = this.resumeService.fetchById(id);
         if (reqResumeOptional.isEmpty()) {
-            System.out.println("Resume not found with ID: " + id);
             throw new IdInvalidException("Resume với id = " + id + " không tồn tại");
         }
 
         Resume resume = reqResumeOptional.get();
-        System.out.println("Found resume - Email: " + resume.getEmail() + ", Status: " + resume.getStatus());
-
-        // Kiểm tra quyền sở hữu - chỉ cho phép user xóa CV của chính mình
         String currentUserEmail = SecurityUtil.getCurrentUserLogin().orElse("");
-        System.out.println("Current user email: " + currentUserEmail);
-        System.out.println("Resume email: " + resume.getEmail());
-        System.out.println("Email match: " + currentUserEmail.equals(resume.getEmail()));
 
-        if (currentUserEmail.isEmpty()) {
-            System.out.println("Current user email is empty");
-            throw new IdInvalidException("Không thể xác định người dùng hiện tại");
+        User currentUser = currentUserEmail.isEmpty()
+                ? null
+                : this.userService.handleGetUserByUsername(currentUserEmail);
+
+        boolean isSuperAdmin = hasSuperAdminRole(currentUser);
+        ensureValidStatus(resume);
+
+        if (!isSuperAdmin) {
+            if (currentUserEmail.isEmpty()) {
+                throw new IdInvalidException("Không thể xác định người dùng hiện tại");
+            }
+            validateResumeOwnership(currentUserEmail, resume);
+            ensurePendingStatus(resume);
         }
 
-        if (!currentUserEmail.equals(resume.getEmail())) {
-            System.out.println("Permission denied - Email mismatch");
-            throw new IdInvalidException("Bạn không có quyền xóa CV này");
-        }
-
-        // Kiểm tra trạng thái - chỉ cho phép xóa CV có trạng thái PENDING
-        System.out.println("Status check - Expected: PENDING, Actual: " + resume.getStatus());
-        System.out.println("Status equals: " + (resume.getStatus() == ResumeStateEnum.PENDING));
-
-        if (resume.getStatus() == null) {
-            System.out.println("Resume status is null");
-            throw new IdInvalidException("Trạng thái CV không hợp lệ");
-        }
-
-        // So sánh enum thay vì string
-        if (resume.getStatus() != ResumeStateEnum.PENDING) {
-            System.out.println("Status check failed - Current status: " + resume.getStatus());
-            throw new IdInvalidException("Chỉ có thể rút CV với trạng thái 'Chờ xử lý'");
-        }
-
-        System.out.println("All checks passed - Deleting resume");
         this.resumeService.delete(id);
         return ResponseEntity.ok().body(null);
     }
@@ -270,5 +249,74 @@ public class ResumeController {
     public ResponseEntity<Boolean> checkUserAppliedToJob(@PathVariable("jobId") long jobId) {
         boolean hasApplied = this.resumeService.hasUserAppliedToJob(jobId);
         return ResponseEntity.ok().body(hasApplied);
+    }
+
+    @GetMapping("/resumes/by-job/{jobId}")
+    @ApiMessage("Fetch resumes by job with pagination and matching score")
+    public ResponseEntity<ResultPaginationDTO> fetchResumesByJob(
+            @PathVariable("jobId") long jobId,
+            @Filter Specification<Resume> spec,
+            Pageable pageable) throws IdInvalidException {
+        
+        // Kiểm tra job có tồn tại không
+        Optional<Job> jobOptional = this.jobService.fetchJobById(jobId);
+        if (jobOptional.isEmpty()) {
+            throw new IdInvalidException("Job với id = " + jobId + " không tồn tại");
+        }
+
+        // Kiểm tra quyền truy cập: HR chỉ xem được resume của job thuộc công ty mình
+        String email = SecurityUtil.getCurrentUserLogin().isPresent() == true
+                ? SecurityUtil.getCurrentUserLogin().get()
+                : "";
+        User currentUser = this.userService.handleGetUserByUsername(email);
+
+        // Nếu là SUPER_ADMIN thì không cần check
+        if (currentUser != null && currentUser.getRole() != null
+                && "SUPER_ADMIN".equals(currentUser.getRole().getName())) {
+            // SUPER_ADMIN có thể xem tất cả
+        } else {
+            // HR chỉ xem được job của công ty mình
+            if (currentUser != null && currentUser.getCompany() != null) {
+                Job job = jobOptional.get();
+                Long jobCompanyId = job.getCompany() != null ? job.getCompany().getId() : null;
+                Long userCompanyId = currentUser.getCompany().getId();
+                if (jobCompanyId == null || !jobCompanyId.equals(userCompanyId)) {
+                    throw new IdInvalidException("Bạn không có quyền xem resume của job này");
+                }
+            }
+        }
+
+        // Tạo specification filter theo job sử dụng Criteria API
+        Specification<Resume> jobSpec = (root, query, criteriaBuilder) -> 
+            criteriaBuilder.equal(root.get("job").get("id"), jobId);
+
+        // Combine với spec từ query params (status filter, etc.)
+        Specification<Resume> finalSpec = jobSpec.and(spec);
+
+        return ResponseEntity.ok().body(this.resumeService.fetchAllResume(finalSpec, pageable));
+    }
+
+    private boolean hasSuperAdminRole(User user) {
+        return user != null
+                && user.getRole() != null
+                && "SUPER_ADMIN".equalsIgnoreCase(user.getRole().getName());
+    }
+
+    private void validateResumeOwnership(String currentUserEmail, Resume resume) throws IdInvalidException {
+        if (!currentUserEmail.equals(resume.getEmail())) {
+            throw new IdInvalidException("Bạn không có quyền xóa CV này");
+        }
+    }
+
+    private void ensureValidStatus(Resume resume) throws IdInvalidException {
+        if (resume.getStatus() == null) {
+            throw new IdInvalidException("Trạng thái CV không hợp lệ");
+        }
+    }
+
+    private void ensurePendingStatus(Resume resume) throws IdInvalidException {
+        if (resume.getStatus() != ResumeStateEnum.PENDING) {
+            throw new IdInvalidException("Chỉ có thể rút CV với trạng thái 'Chờ xử lý'");
+        }
     }
 }
