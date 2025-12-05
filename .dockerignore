@@ -1,0 +1,64 @@
+# Build artifacts
+build/
+bin/
+.gradle/
+out/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+.github
+
+# Logs
+*.log
+logs/
+hs_err_pid*.log
+replay_pid*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+application.properties.env
+
+# Documentation
+*.md
+README.md
+PERFORMANCE_ANALYSIS.md
+
+# Test files
+src/test/
+
+# Migration files (if not needed in production)
+*.sql
+migration_*.sql
+
+# Gradle
+gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+

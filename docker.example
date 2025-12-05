@@ -1,0 +1,42 @@
+##########################
+# Database configuration #
+##########################
+DB_URL=jdbc:mysql://host.docker.internal:3306/jobhunter_v2
+DB_USERNAME=root
+DB_PASSWORD=123456
+
+#####################
+# JWT configuration #
+#####################
+JWT_BASE64_SECRET=TRrx3ZoD9xgevlM73MU8/ay9VO+8RJ7NjvFh5Ab0xoTsKzuPYwCOKDZugGYsVxroYRfP94DH6jBxBhFyBPaQQQ==
+JWT_ACCESS_TOKEN_SECONDS=8640000
+JWT_REFRESH_TOKEN_SECONDS=8640000
+JWT_COOKIE_SECURE=false
+JWT_COOKIE_SAMESITE=Lax
+
+######################
+# Upload constraints #
+######################
+MAX_FILE_SIZE=50MB
+MAX_REQUEST_SIZE=50MB
+# UPLOAD_BASE_URI=file:///Users/gothartnguyen/Documents/Gothart/DAI_HOC_2021_2026/TOT_NGHIEP/upload/
+UPLOAD_BASE_URI=file:///usr/local/upload/
+
+####################
+# Mail credentials #
+####################
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=hiepvvip55555@gmail.com
+MAIL_PASSWORD=rmzjcbaxiplsyoky
+MAIL_SMTP_AUTH=true
+MAIL_STARTTLS_ENABLE=true
+
+##########################
+# Google OAuth settings  #
+##########################
+GOOGLE_CLIENT_ID=1043356532154-9igtp83uspgka5ht7m4835l6o3n77koq.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=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
+GOOGLE_OAUTH_SCOPE=openid,email,profile
+GOOGLE_REDIRECT_URI=http://localhost:3000/auth/callback
+
