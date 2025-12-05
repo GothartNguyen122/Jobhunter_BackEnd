@@ -1,6 +1,7 @@
 package vn.hoidanit.jobhunter.service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -41,14 +42,17 @@ public class ResumeService {
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
     private final JobRepository jobRepository;
+    private final AnalysisDataService analysisDataService;
 
     public ResumeService(
             ResumeRepository resumeRepository,
             UserRepository userRepository,
-            JobRepository jobRepository) {
+            JobRepository jobRepository,
+            AnalysisDataService analysisDataService) {
         this.resumeRepository = resumeRepository;
         this.userRepository = userRepository;
         this.jobRepository = jobRepository;
+        this.analysisDataService = analysisDataService;
     }
 
     public Optional<Resume> fetchById(long id) {
@@ -97,6 +101,10 @@ public class ResumeService {
     }
 
     public ResFetchResumeDTO getResume(Resume resume) {
+        return getResume(resume, null);
+    }
+
+    public ResFetchResumeDTO getResume(Resume resume, Integer matchingScore) {
         ResFetchResumeDTO res = new ResFetchResumeDTO();
         res.setId(resume.getId());
         res.setEmail(resume.getEmail());
@@ -113,6 +121,9 @@ public class ResumeService {
 
         res.setUser(new ResFetchResumeDTO.UserResume(resume.getUser().getId(), resume.getUser().getName()));
         res.setJob(new ResFetchResumeDTO.JobResume(resume.getJob().getId(), resume.getJob().getName()));
+        
+        // Set matching score nếu có
+        res.setMatchingScore(matchingScore);
 
         return res;
     }
@@ -130,10 +141,29 @@ public class ResumeService {
 
         rs.setMeta(mt);
 
-        // remove sensitive data
-        List<ResFetchResumeDTO> listResume = pageUser.getContent()
-                .stream().map(item -> this.getResume(item))
+        // Lấy danh sách job IDs từ resumes
+        List<Resume> resumes = pageUser.getContent();
+        List<Long> jobIds = resumes.stream()
+                .filter(r -> r.getJob() != null)
+                .map(r -> r.getJob().getId())
+                .distinct()
                 .collect(Collectors.toList());
+
+        // Fetch matching scores cho tất cả jobs cùng lúc
+        Map<Long, Map<Long, Integer>> matchingScoresByJobs = 
+            analysisDataService.getMatchingScoresByJobs(jobIds);
+
+        // Map resumes với matching scores
+        List<ResFetchResumeDTO> listResume = resumes.stream().map(item -> {
+            Integer matchingScore = null;
+            if (item.getJob() != null && item.getUser() != null) {
+                Map<Long, Integer> scoresForJob = matchingScoresByJobs.get(item.getJob().getId());
+                if (scoresForJob != null) {
+                    matchingScore = scoresForJob.get(item.getUser().getId());
+                }
+            }
+            return this.getResume(item, matchingScore);
+        }).collect(Collectors.toList());
 
         rs.setResult(listResume);
 
