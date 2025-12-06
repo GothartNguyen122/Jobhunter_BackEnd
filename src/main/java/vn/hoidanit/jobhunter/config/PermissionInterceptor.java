@@ -79,6 +79,15 @@ public class PermissionInterceptor implements HandlerInterceptor {
             return false;
         }
 
+        // Swagger UI paths - allow all methods
+        if (path.startsWith("/v3/api-docs") 
+                || path.startsWith("/swagger-ui") 
+                || path.startsWith("/swagger-resources")
+                || path.startsWith("/webjars")
+                || path.startsWith("/configuration")) {
+            return true;
+        }
+
         // Public GET endpoints
         if ("GET".equalsIgnoreCase(method)) {
             return "/api/v1/career-articles".equals(path)
